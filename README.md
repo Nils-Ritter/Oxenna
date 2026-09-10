@@ -127,10 +127,10 @@ some standard Rust tooling and libraries are not available inside the kernel.
 
 - [x] Improve serial logging
 - [x] Add interrupt handling
-- [ ] Add memory management
+- [x] Add memory management
 - [x] Add a keyboard driver
 - [x] Add a basic shell
-- [ ] Add a simple heap allocator
+- [x] Add a simple heap allocator
 - [ ] Improve automated testing
 - [ ] Support additional hardware
 
