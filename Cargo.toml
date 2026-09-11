@@ -1,5 +1,5 @@
 [package]
-name = "sillos"
+name = "oxenna"
 version = "0.1.0"
 authors = ["Nils Ritter <ritter.nils@protonmail.com>"]
 edition = "2024"
@@ -12,7 +12,7 @@ spin = "0.5.2"
 x86_64 = "0.15.5"
 pic8259 = "0.11.0"
 pc-keyboard = "0.7.0"
-sillos-test-macro = { path = "test_macro" }
+oxenna-test-macro = { path = "test_macro" }
 
 [dependencies.lazy_static]
 version = "1.0"

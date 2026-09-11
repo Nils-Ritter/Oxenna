@@ -143,7 +143,7 @@ fn toggle_serial(){
 }
 
 fn info() {
-    console_println!("SillOS");
+    console_println!("Oxenna");
     console_println!("Architecture: x86_64");
     console_println!("Bootloader: Limine");
     console_println!("Framebuffer: {}x{}", fb::width(), fb::height());

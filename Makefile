@@ -51,7 +51,7 @@ $(ISO): kernel $(LIMINE)
 	mkdir -p iso_root/boot
 	mkdir -p iso_root/EFI/BOOT
 
-	cp $(KERNEL) iso_root/boot/sillos
+	cp $(KERNEL) iso_root/boot/oxenna
 	cp limine.conf iso_root/limine.conf
 
 	cp $(LIMINE_DIR)/limine-bios-cd.bin iso_root/boot/
@@ -85,7 +85,7 @@ $(TEST_ISO): kernel-tests $(LIMINE)
 	mkdir -p iso_root/boot
 	mkdir -p iso_root/EFI/BOOT
 
-	cp $(KERNEL) iso_root/boot/sillos
+	cp $(KERNEL) iso_root/boot/oxenna
 	cp limine.conf iso_root/limine.conf
 
 	cp $(LIMINE_DIR)/limine-bios-cd.bin iso_root/boot/

@@ -29,7 +29,7 @@ mod interrupts_test;
 use crate::{console::with_console, fb::Color};
 pub use crate::test::{TestResult, test};
 
-extern crate sillos_test_macro;
+extern crate oxenna_test_macro;
 
 #[cfg(feature = "test")]
 mod unit_tests;
@@ -56,7 +56,7 @@ static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".text.entry")]
 pub extern "C" fn kmain() -> ! {
-    serial_println!("SillOS starting.");
+    serial_println!("Oxenna starting.");
     kinit();
 
     #[cfg(feature = "test")]
@@ -130,13 +130,7 @@ fn kinit(){
 
 fn kernel() {
     console::clear();
-    console_println!("Welcome to...");
-    console_println!(r#"  _________.__.__  .__   ________    _________
- /   _____/|__|  | |  |  \_____  \  /   _____/
- \_____  \ |  |  | |  |   /   |   \ \_____  \ 
- /        \|  |  |_|  |__/    |    \/        \
-/_______  /|__|____/____/\_______  /_______  /
-        \/                       \/        \/"#);
+    console_println!("Welcome to Oxenna!");
     fb::present();
     console_print!("> ");
     fb::present();

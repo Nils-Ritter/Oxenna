@@ -1,5 +1,5 @@
 [package]
-name = "sillos-test-macro"
+name = "oxenna-test-macro"
 version = "0.1.0"
 edition = "2024"
 
