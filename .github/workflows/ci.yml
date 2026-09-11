@@ -1,4 +1,4 @@
-name: SillOS CI
+name: Oxenna CI
 
 on:
   push:
