@@ -1,7 +1,7 @@
-KERNEL := target/x86_64-unknown-none/debug/sillos
+KERNEL := target/x86_64-unknown-none/debug/oxenna
 
-ISO := sillos.iso
-TEST_ISO := sillos_tests.iso
+ISO := oxenna.iso
+TEST_ISO := oxenna_tests.iso
 
 LIMINE_DIR := limine
 LIMINE := $(LIMINE_DIR)/limine
