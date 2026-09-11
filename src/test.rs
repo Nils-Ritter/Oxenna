@@ -1,4 +1,4 @@
-pub use sillos_test_macro::test;
+pub use oxenna_test_macro::test;
 
 use crate::{
     serial_print,
@@ -59,7 +59,7 @@ unsafe extern "C" {
 pub fn run() -> ! {
     serial_println!();
     serial_println!("========================================");
-    serial_println!("       SILLOS KERNEL TEST SUITE");
+    serial_println!("       OXENNA KERNEL TEST SUITE");
     serial_println!("========================================");
     serial_println!();
 
