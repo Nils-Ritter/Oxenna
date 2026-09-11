@@ -2,15 +2,15 @@
   <img src="logo_slim.png" alt="Logo" width="2000">
 </p>
 
-# SillOS
+# Oxenna
 
-SillOS is a small hobby operating system for x86_64, written in Rust.
+Oxenna is a small hobby operating system for x86_64, written in Rust.
 
 The project is intended for learning and experimentation with operating-system development,
 including kernel initialization, memory management, hardware access, interrupts,
 and bare-metal Rust programming.
 
-> **Status:** Early development
+> **Status:** Working on userspace
 
 ## Features
 
@@ -49,8 +49,8 @@ sudo apt install qemu-system-x86 qemu-utils
 Clone the repository:
 
 ```sh
-git clone https://github.com/Nils-Ritter/SillOS.git
-cd SillOS
+git clone https://github.com/Nils-Ritter/Oxenna.git
+cd Oxenna
 ```
 
 Build the kernel and create a bootable image:
@@ -120,7 +120,7 @@ Check the project without running it:
 cargo check
 ```
 
-Because SillOS is a bare-metal project,
+Because Oxenna is a bare-metal project,
 some standard Rust tooling and libraries are not available inside the kernel.
 
 ## Roadmap
