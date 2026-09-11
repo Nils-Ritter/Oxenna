@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo_slim.png" alt="Logo" width="2000">
+  <img src="logo_slim.webp" alt="Logo" width="2000">
 </p>
 
 # Oxenna
