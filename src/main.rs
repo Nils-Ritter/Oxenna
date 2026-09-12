@@ -24,6 +24,10 @@ mod shell;
 mod trivial_assert_test;
 
 #[cfg(feature = "test")]
+#[path = "../tests/userspace.rs"]
+mod userspace_test;
+
+#[cfg(feature = "test")]
 #[path = "../tests/interrupts.rs"]
 mod interrupts_test;
 
