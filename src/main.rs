@@ -135,7 +135,6 @@ fn kinit(){
 }
 
 fn kernel() {
-    console::clear();
     console_println!("Welcome to Oxenna!");
     console_print!("> ");
     fb::present();

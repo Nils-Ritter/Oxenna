@@ -305,12 +305,12 @@ impl FrameDeallocator<Size4KiB> for BootInfoFrameAllocator {
 
 /// Align an address upwards.
 #[inline]
-const fn align_up(value: u64, alignment: u64) -> u64 {
+pub const fn align_up(value: u64, alignment: u64) -> u64 {
     (value + alignment - 1) & !(alignment - 1)
 }
 
 /// Align an address downwards.
 #[inline]
-const fn align_down(value: u64, alignment: u64) -> u64 {
+pub const fn align_down(value: u64, alignment: u64) -> u64 {
     value & !(alignment - 1)
 }

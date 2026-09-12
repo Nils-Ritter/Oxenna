@@ -3,20 +3,22 @@
 //! These tests exercise the public heap allocator through the
 //! `ALLOCATOR` defined in `kmem::heap`.
 
-use core::{
-    alloc::{
-        GlobalAlloc,
-        Layout,
-    },
-    ptr,
-};
+use alloc::{boxed::Box, vec::Vec};
+ 
+use x86_64::structures::paging::{FrameAllocator, FrameDeallocator};
+ 
+use crate::test::{test, TestResult};
+ 
+use core::alloc::{GlobalAlloc, Layout};
+use core::ptr;
+use crate::kmem::heap::ALLOCATOR;
 
-use crate::{
-    kmem::heap::ALLOCATOR,
-    test,
-    test::TestResult,
+use super::{
+    frame::{align_down, align_up, FRAME_SIZE},
+    heap::{buddy::BuddyAllocator, MemoryAllocator},
+    FRAME_ALLOCATOR,
 };
-
+ 
 // ============================================================
 // Helpers
 // ============================================================
@@ -819,5 +821,491 @@ fn kmem_handles_high_alignment() -> TestResult {
         );
     }
 
+    TestResult::Pass
+}
+
+#[test]
+fn align_up_rounds_up_to_next_multiple() -> TestResult {
+    if align_up(0, FRAME_SIZE) != 0 {
+        return TestResult::Fail("align_up(0) should be 0");
+    }
+ 
+    if align_up(1, FRAME_SIZE) != FRAME_SIZE {
+        return TestResult::Fail("align_up(1) should round up to FRAME_SIZE");
+    }
+ 
+    if align_up(FRAME_SIZE, FRAME_SIZE) != FRAME_SIZE {
+        return TestResult::Fail("align_up of an already-aligned value should not change it");
+    }
+ 
+    if align_up(FRAME_SIZE + 1, FRAME_SIZE) != FRAME_SIZE * 2 {
+        return TestResult::Fail("align_up should round up past an aligned boundary");
+    }
+ 
+    TestResult::Pass
+}
+ 
+#[test]
+fn align_down_rounds_down_to_previous_multiple() -> TestResult {
+    if align_down(0, FRAME_SIZE) != 0 {
+        return TestResult::Fail("align_down(0) should be 0");
+    }
+ 
+    if align_down(FRAME_SIZE - 1, FRAME_SIZE) != 0 {
+        return TestResult::Fail("align_down should round down below the next boundary");
+    }
+ 
+    if align_down(FRAME_SIZE, FRAME_SIZE) != FRAME_SIZE {
+        return TestResult::Fail("align_down of an already-aligned value should not change it");
+    }
+ 
+    if align_down(FRAME_SIZE * 2 - 1, FRAME_SIZE) != FRAME_SIZE {
+        return TestResult::Fail("align_down should not overshoot");
+    }
+ 
+    TestResult::Pass
+}
+ 
+// ============================================================
+// Physical frame allocator (live global instance)
+// ============================================================
+ 
+#[test]
+fn frame_allocation_is_page_aligned() -> TestResult {
+    let mut guard = FRAME_ALLOCATOR.lock();
+ 
+    let allocator = match guard.as_mut() {
+        Some(allocator) => allocator,
+        None => return TestResult::Fail("global frame allocator is not initialized"),
+    };
+ 
+    let frame = match allocator.allocate_frame() {
+        Some(frame) => frame,
+        None => return TestResult::Fail("allocate_frame returned None (out of memory?)"),
+    };
+ 
+    let aligned = frame.start_address().as_u64() % FRAME_SIZE == 0;
+ 
+    unsafe {
+        allocator.deallocate_frame(frame);
+    }
+ 
+    if aligned {
+        TestResult::Pass
+    } else {
+        TestResult::Fail("allocated frame address was not FRAME_SIZE-aligned")
+    }
+}
+ 
+#[test]
+fn consecutive_allocations_are_distinct() -> TestResult {
+    let mut guard = FRAME_ALLOCATOR.lock();
+ 
+    let allocator = match guard.as_mut() {
+        Some(allocator) => allocator,
+        None => return TestResult::Fail("global frame allocator is not initialized"),
+    };
+ 
+    let a = match allocator.allocate_frame() {
+        Some(f) => f,
+        None => return TestResult::Fail("first allocate_frame returned None"),
+    };
+ 
+    let b = match allocator.allocate_frame() {
+        Some(f) => f,
+        None => return TestResult::Fail("second allocate_frame returned None"),
+    };
+ 
+    let distinct = a.start_address() != b.start_address();
+ 
+    unsafe {
+        allocator.deallocate_frame(a);
+        allocator.deallocate_frame(b);
+    }
+ 
+    if distinct {
+        TestResult::Pass
+    } else {
+        TestResult::Fail("two consecutive allocations returned the same frame")
+    }
+}
+ 
+#[test]
+fn free_list_reuses_freed_frames_in_lifo_order() -> TestResult {
+    let mut guard = FRAME_ALLOCATOR.lock();
+ 
+    let allocator = match guard.as_mut() {
+        Some(allocator) => allocator,
+        None => return TestResult::Fail("global frame allocator is not initialized"),
+    };
+ 
+    let a = match allocator.allocate_frame() {
+        Some(f) => f,
+        None => return TestResult::Fail("allocate_frame returned None"),
+    };
+ 
+    let b = match allocator.allocate_frame() {
+        Some(f) => f,
+        None => return TestResult::Fail("allocate_frame returned None"),
+    };
+ 
+    // Free a, then b. The free list is a LIFO stack, so b should come
+    // back out first -- this directly exercises push_free_frame /
+    // pop_free_frame ordering.
+    unsafe {
+        allocator.deallocate_frame(a);
+        allocator.deallocate_frame(b);
+    }
+ 
+    let first = allocator.allocate_frame();
+    let second = allocator.allocate_frame();
+ 
+    let (first, second) = match (first, second) {
+        (Some(first), Some(second)) => (first, second),
+        _ => return TestResult::Fail("allocate_frame returned None after freeing two frames"),
+    };
+ 
+    let correct_order =
+        first.start_address() == b.start_address() && second.start_address() == a.start_address();
+ 
+    // Restore state regardless of outcome so the test never leaks frames.
+    unsafe {
+        allocator.deallocate_frame(first);
+        allocator.deallocate_frame(second);
+    }
+ 
+    if correct_order {
+        TestResult::Pass
+    } else {
+        TestResult::Fail("freed frames were not reused in LIFO order")
+    }
+}
+ 
+#[test]
+fn free_frame_count_reflects_deallocations() -> TestResult {
+    let mut guard = FRAME_ALLOCATOR.lock();
+ 
+    let allocator = match guard.as_mut() {
+        Some(allocator) => allocator,
+        None => return TestResult::Fail("global frame allocator is not initialized"),
+    };
+ 
+    let before = allocator.free_frame_count();
+ 
+    let a = match allocator.allocate_frame() {
+        Some(f) => f,
+        None => return TestResult::Fail("allocate_frame returned None"),
+    };
+ 
+    let b = match allocator.allocate_frame() {
+        Some(f) => f,
+        None => return TestResult::Fail("allocate_frame returned None"),
+    };
+ 
+    // Two of the frames we just took might themselves have come from the
+    // free list (if earlier tests or kernel activity left some there), so
+    // don't assume `before` was zero -- just that freeing exactly two
+    // frames grows the list by exactly two relative to its state right
+    // before we freed them.
+    let before_dealloc = allocator.free_frame_count();
+ 
+    unsafe {
+        allocator.deallocate_frame(a);
+        allocator.deallocate_frame(b);
+    }
+ 
+    let after = allocator.free_frame_count();
+ 
+    let _ = before; // kept for readability of intent above
+ 
+    if after == before_dealloc + 2 {
+        TestResult::Pass
+    } else {
+        TestResult::Fail("free_frame_count did not increase by exactly 2 after two deallocations")
+    }
+}
+ 
+// ============================================================
+// Buddy allocator (private, self-contained scratch heaps)
+// ============================================================
+ 
+/// A correctly-aligned scratch heap used only by these tests. 64-byte
+/// alignment satisfies the buddy allocator's MIN_ORDER requirement.
+#[repr(align(64))]
+struct TestHeap<const N: usize>([u8; N]);
+ 
+/// 64 KiB, a power of two -> decomposes into a single zone.
+static mut BUDDY_TEST_HEAP: TestHeap<65536> = TestHeap([0; 65536]);
+ 
+/// 48 KiB, not a power of two -> decomposes into a 32 KiB zone and a
+/// 16 KiB zone. Used specifically to exercise the zone-boundary fix.
+static mut BUDDY_ZONED_TEST_HEAP: TestHeap<49152> = TestHeap([0; 49152]);
+ 
+#[test]
+fn buddy_alloc_dealloc_roundtrip() -> TestResult {
+    let mut allocator = BuddyAllocator::new();
+    let heap_start = &raw mut BUDDY_TEST_HEAP as usize;
+ 
+    unsafe {
+        allocator.init(heap_start, 65536);
+    }
+ 
+    let layout = match core::alloc::Layout::from_size_align(128, 8) {
+        Ok(layout) => layout,
+        Err(_) => return TestResult::Fail("failed to build test layout"),
+    };
+ 
+    let ptr = unsafe { allocator.alloc(layout) };
+ 
+    if ptr.is_null() {
+        return TestResult::Fail("alloc returned null for a small in-range layout");
+    }
+ 
+    let aligned = (ptr as usize) % layout.align() == 0;
+ 
+    unsafe {
+        allocator.dealloc(ptr, layout);
+    }
+ 
+    if aligned {
+        TestResult::Pass
+    } else {
+        TestResult::Fail("returned pointer was not aligned to the requested alignment")
+    }
+}
+ 
+#[test]
+fn buddy_freeing_everything_fully_reclaims_the_heap() -> TestResult {
+    let mut allocator = BuddyAllocator::new();
+    let heap_start = &raw mut BUDDY_TEST_HEAP as usize;
+ 
+    unsafe {
+        allocator.init(heap_start, 65536);
+    }
+ 
+    let layout = match core::alloc::Layout::from_size_align(4096, 8) {
+        Ok(layout) => layout,
+        Err(_) => return TestResult::Fail("failed to build test layout"),
+    };
+ 
+    // Allocate four blocks, then free them out of order to force several
+    // buddy merges rather than one tidy reverse-order collapse.
+    let a = unsafe { allocator.alloc(layout) };
+    let b = unsafe { allocator.alloc(layout) };
+    let c = unsafe { allocator.alloc(layout) };
+    let d = unsafe { allocator.alloc(layout) };
+ 
+    if a.is_null() || b.is_null() || c.is_null() || d.is_null() {
+        return TestResult::Fail("expected four 4 KiB allocations to fit in a 64 KiB heap");
+    }
+ 
+    unsafe {
+        allocator.dealloc(c, layout);
+        allocator.dealloc(a, layout);
+        allocator.dealloc(d, layout);
+        allocator.dealloc(b, layout);
+    }
+ 
+    // If coalescing is correct, the heap should have recombined back into
+    // one large free block, so a request for half the heap should now
+    // succeed even though no single prior allocation was that big.
+    let big_layout = match core::alloc::Layout::from_size_align(32768, 8) {
+        Ok(layout) => layout,
+        Err(_) => return TestResult::Fail("failed to build test layout"),
+    };
+ 
+    let big = unsafe { allocator.alloc(big_layout) };
+    let reclaimed = !big.is_null();
+ 
+    if !big.is_null() {
+        unsafe { allocator.dealloc(big, big_layout) };
+    }
+ 
+    if reclaimed {
+        TestResult::Pass
+    } else {
+        TestResult::Fail("heap did not fully recombine after freeing everything (coalescing bug)")
+    }
+}
+ 
+#[test]
+fn buddy_oversized_allocation_fails_cleanly() -> TestResult {
+    let mut allocator = BuddyAllocator::new();
+    let heap_start = &raw mut BUDDY_TEST_HEAP as usize;
+ 
+    unsafe {
+        allocator.init(heap_start, 65536);
+    }
+ 
+    // Ask for more than the entire test heap.
+    let layout = match core::alloc::Layout::from_size_align(1024 * 1024, 8) {
+        Ok(layout) => layout,
+        Err(_) => return TestResult::Fail("failed to build test layout"),
+    };
+ 
+    let ptr = unsafe { allocator.alloc(layout) };
+ 
+    if ptr.is_null() {
+        TestResult::Pass
+    } else {
+        TestResult::Fail("alloc should have returned null for a layout larger than the heap")
+    }
+}
+ 
+#[test]
+fn buddy_live_allocations_do_not_overlap() -> TestResult {
+    let mut allocator = BuddyAllocator::new();
+    let heap_start = &raw mut BUDDY_TEST_HEAP as usize;
+ 
+    unsafe {
+        allocator.init(heap_start, 65536);
+    }
+ 
+    let layout = match core::alloc::Layout::from_size_align(256, 8) {
+        Ok(layout) => layout,
+        Err(_) => return TestResult::Fail("failed to build test layout"),
+    };
+ 
+    let a = unsafe { allocator.alloc(layout) };
+    let b = unsafe { allocator.alloc(layout) };
+    let c = unsafe { allocator.alloc(layout) };
+ 
+    if a.is_null() || b.is_null() || c.is_null() {
+        return TestResult::Fail("expected three small allocations to succeed");
+    }
+ 
+    // Stamp each block with a distinct byte pattern. If two "distinct"
+    // allocations actually overlapped, one write would clobber another.
+    unsafe {
+        core::ptr::write_bytes(a, 0xAA, layout.size());
+        core::ptr::write_bytes(b, 0xBB, layout.size());
+        core::ptr::write_bytes(c, 0xCC, layout.size());
+    }
+ 
+    let a_ok = (0..layout.size()).all(|i| unsafe { *a.add(i) } == 0xAA);
+    let b_ok = (0..layout.size()).all(|i| unsafe { *b.add(i) } == 0xBB);
+    let c_ok = (0..layout.size()).all(|i| unsafe { *c.add(i) } == 0xCC);
+ 
+    unsafe {
+        allocator.dealloc(a, layout);
+        allocator.dealloc(b, layout);
+        allocator.dealloc(c, layout);
+    }
+ 
+    if a_ok && b_ok && c_ok {
+        TestResult::Pass
+    } else {
+        TestResult::Fail("two or more live allocations overlapped in memory")
+    }
+}
+ 
+#[test]
+fn buddy_zones_do_not_corrupt_each_other() -> TestResult {
+    let mut allocator = BuddyAllocator::new();
+    let heap_start = &raw mut BUDDY_ZONED_TEST_HEAP as usize;
+ 
+    // 48 KiB -> a 32 KiB zone and a 16 KiB zone. This is the scenario the
+    // per-zone rewrite exists for: without it, merges near a chunk
+    // boundary could compute a buddy address that lands in the other
+    // chunk entirely.
+    unsafe {
+        allocator.init(heap_start, 49152);
+    }
+ 
+    let big_layout = match core::alloc::Layout::from_size_align(16384, 8) {
+        Ok(layout) => layout,
+        Err(_) => return TestResult::Fail("failed to build test layout"),
+    };
+ 
+    // Three 16 KiB blocks: two fill the 32 KiB zone, one fills the 16 KiB
+    // zone -- so this only fits at all if both zones are usable.
+    let first = unsafe { allocator.alloc(big_layout) };
+    let second = unsafe { allocator.alloc(big_layout) };
+    let third = unsafe { allocator.alloc(big_layout) };
+ 
+    if first.is_null() || second.is_null() || third.is_null() {
+        return TestResult::Fail(
+            "expected three 16 KiB blocks to fit across the 32 KiB + 16 KiB zones",
+        );
+    }
+ 
+    // Free them in an order chosen to trigger merge attempts right at
+    // each zone's own boundary.
+    unsafe {
+        allocator.dealloc(second, big_layout);
+        allocator.dealloc(first, big_layout);
+        allocator.dealloc(third, big_layout);
+    }
+ 
+    // Each zone should now be independently, fully reclaimed. Confirm by
+    // allocating the larger zone's entire size in one block.
+    let full_large_zone = match core::alloc::Layout::from_size_align(32768, 8) {
+        Ok(layout) => layout,
+        Err(_) => return TestResult::Fail("failed to build test layout"),
+    };
+ 
+    let reclaimed = unsafe { allocator.alloc(full_large_zone) };
+    let ok = !reclaimed.is_null();
+ 
+    if !reclaimed.is_null() {
+        unsafe { allocator.dealloc(reclaimed, full_large_zone) };
+    }
+ 
+    if ok {
+        TestResult::Pass
+    } else {
+        TestResult::Fail("could not reclaim a full zone after freeing all blocks -- possible cross-zone corruption")
+    }
+}
+ 
+// ============================================================
+// Kernel heap integration (GlobalAlloc via the `alloc` crate)
+// ============================================================
+ 
+#[test]
+fn heap_vec_push_and_grow() -> TestResult {
+    let mut v: Vec<u32> = Vec::new();
+ 
+    for i in 0..256u32 {
+        v.push(i);
+    }
+ 
+    if v.len() != 256 {
+        return TestResult::Fail("Vec length did not match the number of pushes");
+    }
+ 
+    if v[0] != 0 || v[255] != 255 {
+        return TestResult::Fail("Vec contents were corrupted");
+    }
+ 
+    drop(v);
+ 
+    TestResult::Pass
+}
+ 
+#[test]
+fn heap_box_allocation_and_drop() -> TestResult {
+    let boxed = Box::new([0xABu8; 4096]);
+ 
+    let all_correct = boxed.iter().all(|&b| b == 0xAB);
+ 
+    drop(boxed);
+ 
+    if all_correct {
+        TestResult::Pass
+    } else {
+        TestResult::Fail("Box contents did not match what was written")
+    }
+}
+ 
+#[test]
+fn heap_repeated_alloc_dealloc_does_not_exhaust_heap() -> TestResult {
+    // A basic leak/fragmentation smoke test: many short-lived allocations
+    // should not gradually eat the heap if dealloc is wired up correctly.
+    for _ in 0..64 {
+        let v: Vec<u8> = alloc::vec![0u8; 8192];
+        drop(v);
+    }
+ 
     TestResult::Pass
 }

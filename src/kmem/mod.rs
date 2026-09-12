@@ -11,7 +11,7 @@
 
 pub mod frame;
 pub mod heap;
-mod memtests;
+pub mod memtests;
 
 pub use frame::BootInfoFrameAllocator;
 pub use heap::{init_heap, LockedHeap, HEAP_SIZE, HEAP_START};

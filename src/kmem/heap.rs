@@ -36,7 +36,7 @@ use x86_64::{
 
 use crate::kmem::heap::buddy::BuddyAllocator;
 
-mod buddy;
+pub mod buddy;
 
 /// Common interface implemented by kernel heap allocators.
 pub trait MemoryAllocator {
