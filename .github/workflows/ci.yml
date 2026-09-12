@@ -16,7 +16,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get install \
-            xorriso
+            xorriso nasm
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
@@ -39,6 +39,7 @@ jobs:
         run: |
           sudo apt-get install \
             xorriso \
+            nasm \
             qemu-system-x86
 
       - name: Install Rust
@@ -65,7 +66,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get install \
-            xorriso
+            xorriso nasm
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
