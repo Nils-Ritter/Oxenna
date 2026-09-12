@@ -246,7 +246,8 @@ run: $(ISO)
 		-cdrom $(ISO) \
 		-m 256M \
 		-serial stdio \
-		-monitor none
+		-monitor none \
+		-device isa-debug-exit,iobase=0xf4,iosize=0x04;
 
 
 # ============================================================
