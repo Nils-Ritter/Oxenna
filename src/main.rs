@@ -60,9 +60,12 @@ pub extern "C" fn kmain() -> ! {
     serial_println!("Oxenna starting.");
     kinit();
 
+    serial_println!("[TEST] kinit returned");
+
     #[cfg(feature = "test")]
     {
         unsafe { TESTING = true; }
+        serial_println!("[TEST] entering test::run()");
         test::run();
     }
 
@@ -70,10 +73,6 @@ pub extern "C" fn kmain() -> ! {
     {
         unsafe { TESTING = false; }
         kernel();
-    }
-
-    loop {
-        x86_64::instructions::hlt();
     }
 }
 
@@ -135,7 +134,7 @@ fn kinit(){
     console_println!();
 }
 
-fn kernel() {
+fn kernel() -> !{
     console::clear();
     console_println!("Welcome to...");
     console_println_color!(Color::BLUE, "________                                      ");
