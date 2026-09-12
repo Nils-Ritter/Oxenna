@@ -1,10 +1,36 @@
-KERNEL := target/x86_64-unknown-none/debug/oxenna
+# ============================================================
+# Oxenna Makefile
+# ============================================================
+
+SHELL := /bin/bash
+
+# ============================================================
+# Colors
+# ============================================================
+
+RESET  := \033[0m
+BOLD   := \033[1m
+
+RED    := \033[31m
+GREEN  := \033[32m
+YELLOW := \033[33m
+BLUE   := \033[34m
+CYAN   := \033[36m
+GRAY   := \033[90m
+
+# ============================================================
+# Paths
+# ============================================================
+
+KERNEL_TARGET := x86_64-unknown-none
+
+KERNEL := target/$(KERNEL_TARGET)/debug/oxenna
+
+TEST_TARGET_DIR := target-test
+TEST_KERNEL := $(TEST_TARGET_DIR)/$(KERNEL_TARGET)/debug/oxenna
 
 ISO := oxenna.iso
 TEST_ISO := oxenna_tests.iso
-
-USER_SRC := user/user.asm
-USER_BIN := user.bin
 
 LIMINE_DIR := limine
 LIMINE := $(LIMINE_DIR)/limine
@@ -12,9 +38,39 @@ LIMINE := $(LIMINE_DIR)/limine
 LIMINE_REPO := https://github.com/limine-bootloader/limine.git
 LIMINE_BRANCH := v9.x-binary
 
-.PHONY: all clean run test kernel kernel-tests limine cleaniso
+USER_SRC := user/user.asm
+USER_BIN := user.bin
+
+# ============================================================
+# Helpers
+# ============================================================
+
+define banner
+	@printf "\n$(BOLD)$(CYAN)╔══════════════════════════════════════════════════════╗$(RESET)\n"
+	@printf "$(BOLD)$(CYAN)║  %-52s║$(RESET)\n" "$(1)"
+	@printf "$(BOLD)$(CYAN)╚══════════════════════════════════════════════════════╝$(RESET)\n"
+endef
+
+define step
+	@printf "$(BOLD)$(BLUE)  ▶$(RESET) %s\n" "$(1)"
+endef
+
+define success
+	@printf "$(BOLD)$(GREEN)  ✓$(RESET) %s\n" "$(1)"
+endef
+
+.PHONY: all clean cleaniso rebuild
+.PHONY: kernel kernel-tests user
+.PHONY: iso test-iso run test
+.PHONY: limine
+
+
+# ============================================================
+# Default
+# ============================================================
 
 all: $(ISO)
+	$(call success,Build complete!)
 
 
 # ============================================================
@@ -22,26 +78,64 @@ all: $(ISO)
 # ============================================================
 
 $(LIMINE):
-	@if [ ! -d "$(LIMINE_DIR)" ]; then \
-		echo "Limine directory not found. Cloning Limine..."; \
-		git clone --branch $(LIMINE_BRANCH) --depth 1 $(LIMINE_REPO) $(LIMINE_DIR); \
-	fi
-	$(MAKE) -C $(LIMINE_DIR)
+	$(call step,Building Limine...)
 
+	@if [ ! -d "$(LIMINE_DIR)" ]; then \
+		printf "$(BOLD)$(YELLOW)  !$(RESET) Limine not found, cloning...\n"; \
+		git clone \
+			--branch $(LIMINE_BRANCH) \
+			--depth 1 \
+			$(LIMINE_REPO) \
+			$(LIMINE_DIR); \
+	fi
+
+	@$(MAKE) -C $(LIMINE_DIR)
+
+	$(call success,Limine ready)
 
 limine: $(LIMINE)
 
 
 # ============================================================
-# Kernel
+# Normal kernel
 # ============================================================
 
 kernel:
-	cargo build
+	$(call banner,BUILDING KERNEL)
 
+	$(call step,Compiling kernel...)
+	@cargo build
+
+	$(call success,Kernel: $(KERNEL))
+
+
+# ============================================================
+# Test kernel
+# ============================================================
 
 kernel-tests:
-	cargo build --features test
+	$(call banner,BUILDING TEST KERNEL)
+
+	$(call step,Compiling kernel with test feature...)
+	@CARGO_TARGET_DIR=$(TEST_TARGET_DIR) \
+		cargo build --features test
+
+	$(call success,Test kernel: $(TEST_KERNEL))
+
+
+# ============================================================
+# Userspace
+# ============================================================
+
+user: $(USER_BIN)
+
+$(USER_BIN): $(USER_SRC)
+	$(call banner,BUILDING USERSPACE)
+
+	$(call step,Assembling $(USER_SRC)...)
+	@nasm -f bin $(USER_SRC) -o $(USER_BIN)
+
+	$(call success,Userspace: $(USER_BIN))
 
 
 # ============================================================
@@ -49,22 +143,30 @@ kernel-tests:
 # ============================================================
 
 $(ISO): kernel user $(LIMINE)
-	rm -rf iso_root
+	$(call banner,BUILDING NORMAL ISO)
 
-	mkdir -p iso_root/boot
-	mkdir -p iso_root/EFI/BOOT
+	@rm -rf iso_root
 
-	cp $(KERNEL) iso_root/boot/oxenna
-	cp limine.conf iso_root/limine.conf
+	@mkdir -p iso_root/boot
+	@mkdir -p iso_root/EFI/BOOT
 
-	cp $(USER_BIN) iso_root/boot/user.bin
+	$(call step,Copying kernel...)
+	@cp $(KERNEL) iso_root/boot/oxenna
 
-	cp $(LIMINE_DIR)/limine-bios-cd.bin iso_root/boot/
-	cp $(LIMINE_DIR)/limine-uefi-cd.bin iso_root/boot/
-	cp $(LIMINE_DIR)/BOOTX64.EFI iso_root/EFI/BOOT/
-	cp $(LIMINE_DIR)/limine-bios.sys iso_root/boot/
+	$(call step,Copying userspace...)
+	@cp $(USER_BIN) iso_root/boot/user.bin
 
-	xorriso -as mkisofs \
+	$(call step,Copying Limine configuration...)
+	@cp limine.conf iso_root/limine.conf
+
+	$(call step,Copying Limine boot files...)
+	@cp $(LIMINE_DIR)/limine-bios-cd.bin iso_root/boot/
+	@cp $(LIMINE_DIR)/limine-uefi-cd.bin iso_root/boot/
+	@cp $(LIMINE_DIR)/BOOTX64.EFI iso_root/EFI/BOOT/
+	@cp $(LIMINE_DIR)/limine-bios.sys iso_root/boot/
+
+	$(call step,Creating ISO...)
+	@xorriso -as mkisofs \
 		-R -r -J \
 		-b boot/limine-bios-cd.bin \
 		-no-emul-boot \
@@ -73,11 +175,17 @@ $(ISO): kernel user $(LIMINE)
 		--efi-boot boot/limine-uefi-cd.bin \
 		-efi-boot-part \
 		--efi-boot-image \
-		--protective-msdos-label \
+		-o $(ISO) \
 		iso_root \
-		-o $(ISO)
+		>/dev/null 2>&1
 
-	$(LIMINE) bios-install $(ISO)
+	$(call step,Installing Limine...)
+	@$(LIMINE) bios-install $(ISO) >/dev/null
+
+	$(call success,Normal ISO: $(ISO))
+
+
+iso: $(ISO)
 
 
 # ============================================================
@@ -85,20 +193,27 @@ $(ISO): kernel user $(LIMINE)
 # ============================================================
 
 $(TEST_ISO): kernel-tests $(LIMINE)
-	rm -rf iso_root
+	$(call banner,BUILDING TEST ISO)
 
-	mkdir -p iso_root/boot
-	mkdir -p iso_root/EFI/BOOT
+	@rm -rf iso_root
 
-	cp $(KERNEL) iso_root/boot/oxenna
-	cp limine.conf iso_root/limine.conf
+	@mkdir -p iso_root/boot
+	@mkdir -p iso_root/EFI/BOOT
 
-	cp $(LIMINE_DIR)/limine-bios-cd.bin iso_root/boot/
-	cp $(LIMINE_DIR)/limine-uefi-cd.bin iso_root/boot/
-	cp $(LIMINE_DIR)/BOOTX64.EFI iso_root/EFI/BOOT/
-	cp $(LIMINE_DIR)/limine-bios.sys iso_root/boot/
+	$(call step,Copying TEST kernel...)
+	@cp $(TEST_KERNEL) iso_root/boot/oxenna
 
-	xorriso -as mkisofs \
+	$(call step,Copying TEST Limine configuration...)
+	@cp limine_test.conf iso_root/limine.conf
+
+	$(call step,Copying Limine boot files...)
+	@cp $(LIMINE_DIR)/limine-bios-cd.bin iso_root/boot/
+	@cp $(LIMINE_DIR)/limine-uefi-cd.bin iso_root/boot/
+	@cp $(LIMINE_DIR)/BOOTX64.EFI iso_root/EFI/BOOT/
+	@cp $(LIMINE_DIR)/limine-bios.sys iso_root/boot/
+
+	$(call step,Creating TEST ISO...)
+	@xorriso -as mkisofs \
 		-R -r -J \
 		-b boot/limine-bios-cd.bin \
 		-no-emul-boot \
@@ -107,49 +222,45 @@ $(TEST_ISO): kernel-tests $(LIMINE)
 		--efi-boot boot/limine-uefi-cd.bin \
 		-efi-boot-part \
 		--efi-boot-image \
-		--protective-msdos-label \
+		-o $(TEST_ISO) \
 		iso_root \
-		-o $(TEST_ISO)
+		>/dev/null 2>&1
 
-	$(LIMINE) bios-install $(TEST_ISO)
+	$(call step,Installing Limine...)
+	@$(LIMINE) bios-install $(TEST_ISO) >/dev/null
 
-# ============================================================
-# User-space binaries
-# ============================================================
+	$(call success,Test ISO: $(TEST_ISO))
 
-user: $(USER_BIN)
 
-$(USER_BIN): $(USER_SRC)
-	mkdir -p user
-	nasm -f bin $(USER_SRC) -o $(USER_BIN)
+test-iso: $(TEST_ISO)
+
 
 # ============================================================
-# Run
+# Normal run
 # ============================================================
 
 run: $(ISO)
-	@printf '\033[2J\033[H'
+	$(call banner,BOOTING OXENNA)
+
 	@qemu-system-x86_64 \
-		-m 512M \
 		-cdrom $(ISO) \
+		-m 256M \
 		-serial stdio \
-		-device isa-debug-exit,iobase=0xf4,iosize=0x04; \
-	status=$$?; \
-	if [ $$status -eq 33 ]; then \
-		exit 0; \
-	elif [ $$status -eq 35 ]; then \
-		exit 1; \
-	else \
-		echo "QEMU exited unexpectedly with code $$status"; \
-		exit 1; \
-	fi
+		-monitor none
+
+
 # ============================================================
 # Tests
 # ============================================================
 
 test: $(TEST_ISO)
-	@printf '\033[2J\033[H'
-	@qemu-system-x86_64 \
+	$(call banner,RUNNING KERNEL TESTS)
+
+	@printf "$(GRAY)  Kernel: $(TEST_KERNEL)$(RESET)\n"
+	@printf "$(GRAY)  ISO:    $(TEST_ISO)$(RESET)\n\n"
+
+	@set +e; \
+	qemu-system-x86_64 \
 		-cdrom $(TEST_ISO) \
 		-m 256M \
 		-display none \
@@ -157,29 +268,61 @@ test: $(TEST_ISO)
 		-monitor none \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04; \
 	status=$$?; \
+	printf "\n"; \
 	if [ $$status -eq 33 ]; then \
+		printf "$(BOLD)$(GREEN)  ✓ ALL TESTS PASSED$(RESET)\n"; \
 		exit 0; \
 	elif [ $$status -eq 35 ]; then \
+		printf "$(BOLD)$(RED)  ✗ TESTS FAILED$(RESET)\n"; \
 		exit 1; \
 	else \
-		echo "QEMU exited unexpectedly with code $$status"; \
-		exit 1; \
+		printf "$(BOLD)$(RED)  ✗ QEMU EXITED UNEXPECTEDLY$(RESET)\n"; \
+		printf "$(GRAY)    status = %s$(RESET)\n" "$$status"; \
+		exit $$status; \
 	fi
 
 
 # ============================================================
-# Clean
+# Cleaning
 # ============================================================
 
 clean:
-	cargo clean
-	rm -rf iso_root
-	rm -f $(ISO)
-	rm -f $(TEST_ISO)
-	rm -rf $(LIMINE_DIR)
+	$(call banner,CLEANING)
+
+	$(call step,Removing Cargo artifacts...)
+	@cargo clean
+	@rm -rf $(TEST_TARGET_DIR)
+
+	$(call step,Removing ISO files...)
+	@rm -f $(ISO)
+	@rm -f $(TEST_ISO)
+
+	$(call step,Removing ISO staging directory...)
+	@rm -rf iso_root
+
+	$(call step,Removing userspace binary...)
+	@rm -f $(USER_BIN)
+
+	$(call success,Clean complete)
 
 
 cleaniso:
-	rm -rf iso_root
-	rm -f $(ISO)
-	rm -f $(TEST_ISO)
+	$(call banner,CLEANING ISOS)
+
+	@rm -f $(ISO)
+	@rm -f $(TEST_ISO)
+	@rm -rf iso_root
+
+	$(call success,ISO files removed)
+
+
+# ============================================================
+# Full rebuild
+# ============================================================
+
+rebuild:
+	$(MAKE) clean
+	$(MAKE) all
+
+
+.DEFAULT_GOAL := all
