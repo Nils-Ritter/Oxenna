@@ -67,9 +67,9 @@ struct FreeListNode {
 /// `order` (the zone's own top order), so it can never wander into a
 /// neighboring zone.
 #[derive(Clone, Copy)]
-struct Zone {
-    base: usize,
-    order: usize,
+pub struct Zone {
+    pub base: usize,
+    pub order: usize,
 }
 
 /// A binary buddy allocator.
@@ -83,11 +83,11 @@ struct Zone {
 /// ```
 pub struct BuddyAllocator {
     /// Largest order used by any zone; the ceiling for `allocate_order`.
-    max_order: usize,
-    free_lists: [*mut FreeListNode; ORDER_COUNT],
-    zones: [Option<Zone>; MAX_ZONES],
-    zone_count: usize,
-    initialized: bool,
+    pub max_order: usize,
+    pub free_lists: [*mut FreeListNode; ORDER_COUNT],
+    pub zones: [Option<Zone>; MAX_ZONES],
+    pub zone_count: usize,
+    pub initialized: bool,
 }
 
 // `free_lists` and `zones` hold raw pointers/addresses into heap memory
@@ -217,7 +217,7 @@ impl BuddyAllocator {
     }
 
     /// Find the zone containing `addr`, if any.
-    fn zone_for(&self, addr: usize) -> Option<Zone> {
+    pub fn zone_for(&self, addr: usize) -> Option<Zone> {
         self.zones[..self.zone_count]
             .iter()
             .flatten()
@@ -231,10 +231,30 @@ impl BuddyAllocator {
     /// Compute the address of a block's buddy at the given order, relative
     /// to the base of the zone it lives in.
     #[inline]
-    fn buddy_addr(zone_base: usize, addr: usize, order: usize) -> usize {
-        let offset = addr - zone_base;
+    fn buddy_addr(zone: Zone, addr: usize, order: usize) -> Option<usize> {
+        let block_size = Self::block_size(order);
+        let zone_size = Self::block_size(zone.order);
 
-        zone_base + (offset ^ Self::block_size(order))
+        let offset = addr.checked_sub(zone.base)?;
+
+        // The block must be inside the zone.
+        if offset >= zone_size {
+            return None;
+        }
+
+        // The block must be aligned to this order relative to the zone.
+        if offset % block_size != 0 {
+            return None;
+        }
+
+        let buddy_offset = offset ^ block_size;
+
+        // Buddy must remain inside this zone.
+        if buddy_offset >= zone_size {
+            return None;
+        }
+
+        Some(zone.base + buddy_offset)
     }
 
     /// Push a free block of the given order onto its free list.
@@ -296,6 +316,29 @@ impl BuddyAllocator {
 
             prev = current;
             current = unsafe { (*current).next };
+        }
+
+        false
+    }
+
+    pub fn contains_free_block(
+        &self,
+        addr: usize,
+        order: usize,
+    ) -> bool {
+        let index = Self::index_for(order);
+        let target = addr as *mut FreeListNode;
+
+        let mut current = self.free_lists[index];
+
+        while !current.is_null() {
+            if current == target {
+                return true;
+            }
+
+            current = unsafe {
+                (*current).next
+            };
         }
 
         false
@@ -373,7 +416,10 @@ impl MemoryAllocator for BuddyAllocator {
         // Both the buddy address and the merge ceiling are relative to
         // this zone only, so a merge can never cross into another zone.
         while order < zone.order {
-            let buddy = Self::buddy_addr(zone.base, addr, order);
+            let buddy = match Self::buddy_addr(zone, addr, order) {
+                Some(buddy) => buddy,
+                None => break,
+            };
 
             if self.remove_free_block(buddy, order) {
                 addr = cmp::min(addr, buddy);

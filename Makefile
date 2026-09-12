@@ -116,6 +116,7 @@ $(TEST_ISO): kernel-tests $(LIMINE)
 run: $(ISO)
 	@printf '\033[2J\033[H'
 	@qemu-system-x86_64 \
+		-m 512M \
 		-cdrom $(ISO) \
 		-serial stdio \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04; \
@@ -128,7 +129,6 @@ run: $(ISO)
 		echo "QEMU exited unexpectedly with code $$status"; \
 		exit 1; \
 	fi
-
 # ============================================================
 # Tests
 # ============================================================

@@ -1036,11 +1036,16 @@ struct TestHeap<const N: usize>([u8; N]);
  
 /// 64 KiB, a power of two -> decomposes into a single zone.
 static mut BUDDY_TEST_HEAP: TestHeap<65536> = TestHeap([0; 65536]);
- 
+
+/// A 32 KiB-aligned scratch heap used to test buddy-zone boundaries.
+#[repr(align(32768))]
+struct BuddyZonedTestHeap([u8; 48 * 1024]);
+
 /// 48 KiB, not a power of two -> decomposes into a 32 KiB zone and a
 /// 16 KiB zone. Used specifically to exercise the zone-boundary fix.
-static mut BUDDY_ZONED_TEST_HEAP: TestHeap<49152> = TestHeap([0; 49152]);
- 
+static mut BUDDY_ZONED_TEST_HEAP: BuddyZonedTestHeap =
+    BuddyZonedTestHeap([0; 48 * 1024]);
+
 #[test]
 fn buddy_alloc_dealloc_roundtrip() -> TestResult {
     let mut allocator = BuddyAllocator::new();
@@ -1198,66 +1203,257 @@ fn buddy_live_allocations_do_not_overlap() -> TestResult {
         TestResult::Fail("two or more live allocations overlapped in memory")
     }
 }
- 
+
+
 #[test]
 fn buddy_zones_do_not_corrupt_each_other() -> TestResult {
     let mut allocator = BuddyAllocator::new();
-    let heap_start = &raw mut BUDDY_ZONED_TEST_HEAP as usize;
- 
-    // 48 KiB -> a 32 KiB zone and a 16 KiB zone. This is the scenario the
-    // per-zone rewrite exists for: without it, merges near a chunk
-    // boundary could compute a buddy address that lands in the other
-    // chunk entirely.
-    unsafe {
-        allocator.init(heap_start, 49152);
+
+    let heap_start =
+        unsafe {
+            &raw mut BUDDY_ZONED_TEST_HEAP.0 as *mut u8 as usize
+        };
+
+    // The test specifically requires the heap to begin on a 32 KiB
+    // boundary so the allocator can form a 32 KiB zone followed by
+    // a 16 KiB zone.
+    if heap_start % (32 * 1024) != 0 {
+        return TestResult::Fail(
+            "test heap is not 32 KiB aligned",
+        );
     }
- 
-    let big_layout = match core::alloc::Layout::from_size_align(16384, 8) {
-        Ok(layout) => layout,
-        Err(_) => return TestResult::Fail("failed to build test layout"),
-    };
- 
-    // Three 16 KiB blocks: two fill the 32 KiB zone, one fills the 16 KiB
-    // zone -- so this only fits at all if both zones are usable.
-    let first = unsafe { allocator.alloc(big_layout) };
-    let second = unsafe { allocator.alloc(big_layout) };
-    let third = unsafe { allocator.alloc(big_layout) };
- 
-    if first.is_null() || second.is_null() || third.is_null() {
+
+    unsafe {
+        allocator.init(
+            heap_start,
+            48 * 1024,
+        );
+    }
+
+    if allocator.zone_count != 2 {
+        return TestResult::Fail(
+            "48 KiB heap should be decomposed into exactly two zones",
+        );
+    }
+
+    let first_zone =
+        match allocator.zones[0] {
+            Some(zone) => zone,
+            None => {
+                return TestResult::Fail(
+                    "first zone is missing",
+                );
+            }
+        };
+
+    let second_zone =
+        match allocator.zones[1] {
+            Some(zone) => zone,
+            None => {
+                return TestResult::Fail(
+                    "second zone is missing",
+                );
+            }
+        };
+
+    if first_zone.base != heap_start {
+        return TestResult::Fail(
+            "first zone does not start at heap base",
+        );
+    }
+
+    if first_zone.order != 15 {
+        return TestResult::Fail(
+            "first zone should be 32 KiB",
+        );
+    }
+
+    if second_zone.base != heap_start + 32 * 1024 {
+        return TestResult::Fail(
+            "second zone should begin after the 32 KiB zone",
+        );
+    }
+
+    if second_zone.order != 14 {
+        return TestResult::Fail(
+            "second zone should be 16 KiB",
+        );
+    }
+
+    // Three 16 KiB allocations must fit:
+    //
+    //   [ 16 KiB ][ 16 KiB ][ 16 KiB ]
+    //   <----32 KiB----> <16 KiB>
+    //
+    // This proves both zones participate in allocation.
+    let layout_16k =
+        match Layout::from_size_align(16 * 1024, 8) {
+            Ok(layout) => layout,
+            Err(_) => {
+                return TestResult::Fail(
+                    "failed to create 16 KiB layout",
+                );
+            }
+        };
+
+    let first =
+        unsafe { allocator.alloc(layout_16k) };
+
+    let second =
+        unsafe { allocator.alloc(layout_16k) };
+
+    let third =
+        unsafe { allocator.alloc(layout_16k) };
+
+    if first.is_null()
+        || second.is_null()
+        || third.is_null()
+    {
+        if !first.is_null() {
+            unsafe {
+                allocator.dealloc(
+                    first,
+                    layout_16k,
+                );
+            }
+        }
+
+        if !second.is_null() {
+            unsafe {
+                allocator.dealloc(
+                    second,
+                    layout_16k,
+                );
+            }
+        }
+
+        if !third.is_null() {
+            unsafe {
+                allocator.dealloc(
+                    third,
+                    layout_16k,
+                );
+            }
+        }
+
         return TestResult::Fail(
             "expected three 16 KiB blocks to fit across the 32 KiB + 16 KiB zones",
         );
     }
- 
-    // Free them in an order chosen to trigger merge attempts right at
-    // each zone's own boundary.
+
+    // Free the two blocks belonging to the large zone first.
+    //
+    // Depending on allocation order, first/second should occupy the
+    // 32 KiB zone, while third should occupy the 16 KiB zone.
     unsafe {
-        allocator.dealloc(second, big_layout);
-        allocator.dealloc(first, big_layout);
-        allocator.dealloc(third, big_layout);
+        allocator.dealloc(
+            second,
+            layout_16k,
+        );
+
+        allocator.dealloc(
+            first,
+            layout_16k,
+        );
+
+        allocator.dealloc(
+            third,
+            layout_16k,
+        );
     }
- 
-    // Each zone should now be independently, fully reclaimed. Confirm by
-    // allocating the larger zone's entire size in one block.
-    let full_large_zone = match core::alloc::Layout::from_size_align(32768, 8) {
-        Ok(layout) => layout,
-        Err(_) => return TestResult::Fail("failed to build test layout"),
-    };
- 
-    let reclaimed = unsafe { allocator.alloc(full_large_zone) };
-    let ok = !reclaimed.is_null();
- 
-    if !reclaimed.is_null() {
-        unsafe { allocator.dealloc(reclaimed, full_large_zone) };
+
+    // The large zone must have been independently reconstructed.
+    let layout_32k =
+        match Layout::from_size_align(32 * 1024, 8) {
+            Ok(layout) => layout,
+            Err(_) => {
+                return TestResult::Fail(
+                    "failed to create 32 KiB layout",
+                );
+            }
+        };
+
+    let reclaimed =
+        unsafe { allocator.alloc(layout_32k) };
+
+    if reclaimed.is_null() {
+        return TestResult::Fail(
+            "could not reclaim the complete 32 KiB zone",
+        );
     }
- 
-    if ok {
-        TestResult::Pass
-    } else {
-        TestResult::Fail("could not reclaim a full zone after freeing all blocks -- possible cross-zone corruption")
+
+    if reclaimed as usize != first_zone.base {
+        unsafe {
+            allocator.dealloc(
+                reclaimed,
+                layout_32k,
+            );
+        }
+
+        return TestResult::Fail(
+            "32 KiB allocation did not come from the large zone",
+        );
     }
+
+    unsafe {
+        allocator.dealloc(
+            reclaimed,
+            layout_32k,
+        );
+    }
+
+    // The neighboring 16 KiB zone must still work independently.
+    let small =
+        unsafe { allocator.alloc(layout_16k) };
+
+    if small.is_null() {
+        return TestResult::Fail(
+            "16 KiB zone was lost or corrupted",
+        );
+    }
+
+    let small_zone =
+        match allocator.zone_for(small as usize) {
+            Some(zone) => zone,
+            None => {
+                unsafe {
+                    allocator.dealloc(
+                        small,
+                        layout_16k,
+                    );
+                }
+
+                return TestResult::Fail(
+                    "small allocation is outside all zones",
+                );
+            }
+        };
+
+    if small_zone.base != second_zone.base
+        || small_zone.order != second_zone.order
+    {
+        unsafe {
+            allocator.dealloc(
+                small,
+                layout_16k,
+            );
+        }
+
+        return TestResult::Fail(
+            "16 KiB allocation came from the wrong zone",
+        );
+    }
+
+    unsafe {
+        allocator.dealloc(
+            small,
+            layout_16k,
+        );
+    }
+
+    TestResult::Pass
 }
- 
+
 // ============================================================
 // Kernel heap integration (GlobalAlloc via the `alloc` crate)
 // ============================================================
