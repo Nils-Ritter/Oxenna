@@ -193,17 +193,39 @@ extern "x86-interrupt" fn page_fault_handler(
 ) {
     let address = Cr2::read();
 
+    let from_user =
+        stack_frame.code_segment.rpl()
+            == x86_64::PrivilegeLevel::Ring3;
+
     crate::serial_println!();
-    crate::serial_println!("EXCEPTION: PAGE FAULT");
+    crate::serial_println!(
+        "EXCEPTION: PAGE FAULT"
+    );
+
     crate::serial_println!(
         "accessed address: {:?}",
         address
     );
+
     crate::serial_println!(
         "error code: {:?}",
         error_code
     );
-    crate::serial_println!("{:#?}", stack_frame);
+
+    crate::serial_println!(
+        "CPL: {:?}",
+        stack_frame.code_segment.rpl()
+    );
+
+    crate::serial_println!(
+        "from user: {}",
+        from_user
+    );
+
+    crate::serial_println!(
+        "{:#?}",
+        stack_frame
+    );
 
     panic_loop();
 }

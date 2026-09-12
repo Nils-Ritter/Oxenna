@@ -14,6 +14,7 @@ mod test;
 mod kmem;
 pub mod int;
 pub mod gdt;
+mod user;
 mod pic;
 mod console;
 mod shell;
@@ -145,7 +146,7 @@ fn kernel() {
     console_println_color!(Color::BLUE, "        \\/      \\/    \\/     \\/     \\/     \\/");
     console_print!("\nType any command to get started: ");
     fb::present();
-
+    user::run()
 }
 
 #[panic_handler]

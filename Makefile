@@ -3,6 +3,9 @@ KERNEL := target/x86_64-unknown-none/debug/oxenna
 ISO := oxenna.iso
 TEST_ISO := oxenna_tests.iso
 
+USER_SRC := user/user.asm
+USER_BIN := user.bin
+
 LIMINE_DIR := limine
 LIMINE := $(LIMINE_DIR)/limine
 
@@ -45,7 +48,7 @@ kernel-tests:
 # Normal ISO
 # ============================================================
 
-$(ISO): kernel $(LIMINE)
+$(ISO): kernel user $(LIMINE)
 	rm -rf iso_root
 
 	mkdir -p iso_root/boot
@@ -53,6 +56,8 @@ $(ISO): kernel $(LIMINE)
 
 	cp $(KERNEL) iso_root/boot/oxenna
 	cp limine.conf iso_root/limine.conf
+
+	cp $(USER_BIN) iso_root/boot/user.bin
 
 	cp $(LIMINE_DIR)/limine-bios-cd.bin iso_root/boot/
 	cp $(LIMINE_DIR)/limine-uefi-cd.bin iso_root/boot/
@@ -108,6 +113,15 @@ $(TEST_ISO): kernel-tests $(LIMINE)
 
 	$(LIMINE) bios-install $(TEST_ISO)
 
+# ============================================================
+# User-space binaries
+# ============================================================
+
+user: $(USER_BIN)
+
+$(USER_BIN): $(USER_SRC)
+	mkdir -p user
+	nasm -f bin $(USER_SRC) -o $(USER_BIN)
 
 # ============================================================
 # Run
