@@ -36,6 +36,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29363c0f37e66e18575fadf7141c56ee7ea04ae5fecbeb25eff303f77af203a9"
 
 [[package]]
+name = "oxenna"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "limine",
+ "oxenna-test-macro",
+ "pc-keyboard",
+ "pic8259",
+ "spin 0.5.2",
+ "uart_16550",
+ "volatile 0.2.7",
+ "x86_64",
+]
+
+[[package]]
+name = "oxenna-test-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "pc-keyboard"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -73,30 +97,6 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
-
-[[package]]
-name = "sillos"
-version = "0.1.0"
-dependencies = [
- "lazy_static",
- "limine",
- "pc-keyboard",
- "pic8259",
- "sillos-test-macro",
- "spin 0.5.2",
- "uart_16550",
- "volatile 0.2.7",
- "x86_64",
-]
-
-[[package]]
-name = "sillos-test-macro"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "spin"

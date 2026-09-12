@@ -1,0 +1,1 @@
+- Deleting characters in kterm always uses black background color instead of the bgcol
