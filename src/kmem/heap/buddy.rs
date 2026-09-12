@@ -8,8 +8,29 @@
 //! the next larger free block in half, pushing the unused half ("buddy")
 //! onto a lower free list. Freeing a block checks whether its buddy is
 //! also free and, if so, merges the two into the next order up, repeating
-//! until no further merge is possible. This keeps fragmentation bounded
-//! without needing a coalescing pass like the linked-list allocator.
+//! until no further merge is possible.
+//!
+//! ## Zones
+//!
+//! A heap size like Oxenna's 100 MiB is not itself a power of two, so
+//! `init` decomposes it into the largest aligned power-of-two chunks
+//! that fit (e.g. 64 MiB + 32 MiB + 4 MiB). Each chunk is tracked as an
+//! independent "zone" with its own base address and top order.
+//!
+//! This matters because the classic buddy address formula,
+//! `buddy = addr XOR block_size(order)`, is only valid when computed
+//! relative to a base that is itself aligned to a power of two at least
+//! as large as the block being merged. Computing it relative to one
+//! global `heap_start` across multiple differently-sized chunks can
+//! produce an address that isn't the block's real buddy at all — and if
+//! that bogus address happens to coincide with an unrelated free block
+//! of the same order in a different chunk, two non-adjacent blocks would
+//! be merged into one, corrupting the heap.
+//!
+//! Tracking zones separately fixes this: a merge is only ever attempted
+//! relative to the base of the zone the block actually lives in, and is
+//! only allowed up to that zone's own top order, so it can never reach
+//! outside the zone's bounds.
 
 use core::{
     alloc::Layout,
@@ -29,9 +50,26 @@ const MAX_ORDER: usize = 30; // 1 GiB
 /// Number of distinct block sizes tracked by the allocator.
 const ORDER_COUNT: usize = MAX_ORDER - MIN_ORDER + 1;
 
+/// Maximum number of power-of-two chunks a non-power-of-two heap can be
+/// decomposed into. A heap size that is itself a power of two needs
+/// just one; pathological sizes need at most one per bit.
+const MAX_ZONES: usize = 32;
+
 /// Intrusive free-list node stored inside a free block.
 struct FreeListNode {
     next: *mut FreeListNode,
+}
+
+/// A single power-of-two-aligned chunk of the heap.
+///
+/// All buddy merging for a block is bounded to the zone containing it:
+/// buddy addresses are computed relative to `base`, and merging stops at
+/// `order` (the zone's own top order), so it can never wander into a
+/// neighboring zone.
+#[derive(Clone, Copy)]
+struct Zone {
+    base: usize,
+    order: usize,
 }
 
 /// A binary buddy allocator.
@@ -44,26 +82,28 @@ struct FreeListNode {
 /// free_lists[order] -> [ FreeListNode | free memory ] -> [ FreeListNode | free memory ] -> null
 /// ```
 pub struct BuddyAllocator {
-    heap_start: usize,
-    heap_size: usize,
+    /// Largest order used by any zone; the ceiling for `allocate_order`.
     max_order: usize,
     free_lists: [*mut FreeListNode; ORDER_COUNT],
+    zones: [Option<Zone>; MAX_ZONES],
+    zone_count: usize,
     initialized: bool,
 }
 
-// `free_lists` holds raw pointers into heap memory owned exclusively by
-// this allocator, so it is safe to move/share across threads under the
-// same synchronization the caller already applies (e.g. a `Mutex`).
+// `free_lists` and `zones` hold raw pointers/addresses into heap memory
+// owned exclusively by this allocator, so it is safe to move/share across
+// threads under the same synchronization the caller already applies
+// (e.g. a `Mutex`).
 unsafe impl Send for BuddyAllocator {}
 
 impl BuddyAllocator {
     /// Create an uninitialized buddy allocator.
     pub const fn new() -> Self {
         Self {
-            heap_start: 0,
-            heap_size: 0,
             max_order: MIN_ORDER,
             free_lists: [ptr::null_mut(); ORDER_COUNT],
+            zones: [None; MAX_ZONES],
+            zone_count: 0,
             initialized: false,
         }
     }
@@ -71,20 +111,17 @@ impl BuddyAllocator {
     /// Initialize the allocator over a contiguous memory range.
     ///
     /// The range does not need to be a power-of-two size: it is greedily
-    /// decomposed into the largest aligned power-of-two blocks that fit,
-    /// so a `heap_size` like SillOS's 100 MiB heap works without waste
-    /// beyond the final, sub-minimum-block remainder (if any).
+    /// decomposed into the largest aligned power-of-two chunks that fit,
+    /// each tracked as its own zone, so a `heap_size` like Oxenna's
+    /// 100 MiB heap works without waste beyond the final, sub-minimum-
+    /// block remainder (if any).
     ///
     /// # Safety
     ///
     /// `heap_start..heap_start + heap_size` must be valid writable memory
     /// that is exclusively owned by this allocator, and `heap_start` must
     /// be aligned to at least `2^MIN_ORDER`.
-    pub unsafe fn init(
-        &mut self,
-        heap_start: usize,
-        heap_size: usize,
-    ) {
+    pub unsafe fn init(&mut self, heap_start: usize, heap_size: usize) {
         assert!(
             heap_start % Self::block_size(MIN_ORDER) == 0,
             "heap start is not aligned to the minimum block size"
@@ -95,27 +132,25 @@ impl BuddyAllocator {
             "heap is too small"
         );
 
-        self.heap_start = heap_start;
-        self.heap_size = heap_size;
-        self.max_order =
-            Self::largest_order_for(heap_size).min(MAX_ORDER);
         self.free_lists = [ptr::null_mut(); ORDER_COUNT];
+        self.zones = [None; MAX_ZONES];
+        self.zone_count = 0;
+        self.max_order = MIN_ORDER;
+
+        let heap_max_order = Self::largest_order_for(heap_size).min(MAX_ORDER);
 
         let mut addr = heap_start;
         let mut remaining = heap_size;
 
-        // Decompose the heap into the largest aligned power-of-two blocks
-        // that fit, largest first, and seed each onto its free list.
+        // Decompose the heap into the largest aligned power-of-two chunks
+        // that fit, largest first. Each chunk becomes its own zone and
+        // its own initial free block.
         while remaining >= Self::block_size(MIN_ORDER) {
-            let mut order = self.max_order;
+            let mut order = heap_max_order.min(Self::largest_order_for(remaining));
 
-            while order > MIN_ORDER {
-                let size = Self::block_size(order);
-
-                if size <= remaining && addr % size == 0 {
-                    break;
-                }
-
+            while order > MIN_ORDER
+                && (Self::block_size(order) > remaining || addr % Self::block_size(order) != 0)
+            {
                 order -= 1;
             }
 
@@ -124,6 +159,12 @@ impl BuddyAllocator {
             if size > remaining || addr % size != 0 {
                 break;
             }
+
+            assert!(self.zone_count < MAX_ZONES, "heap decomposes into too many zones");
+
+            self.zones[self.zone_count] = Some(Zone { base: addr, order });
+            self.zone_count += 1;
+            self.max_order = self.max_order.max(order);
 
             unsafe {
                 self.push_free_block(addr, order);
@@ -152,9 +193,7 @@ impl BuddyAllocator {
     fn largest_order_for(size: usize) -> usize {
         let mut order = MIN_ORDER;
 
-        while order < MAX_ORDER
-            && Self::block_size(order + 1) <= size
-        {
+        while order < MAX_ORDER && Self::block_size(order + 1) <= size {
             order += 1;
         }
 
@@ -177,17 +216,34 @@ impl BuddyAllocator {
         Some(order)
     }
 
+    /// Find the zone containing `addr`, if any.
+    fn zone_for(&self, addr: usize) -> Option<Zone> {
+        self.zones[..self.zone_count]
+            .iter()
+            .flatten()
+            .copied()
+            .find(|zone| {
+                let size = Self::block_size(zone.order);
+                addr >= zone.base && addr < zone.base + size
+            })
+    }
+
+    /// Compute the address of a block's buddy at the given order, relative
+    /// to the base of the zone it lives in.
+    #[inline]
+    fn buddy_addr(zone_base: usize, addr: usize, order: usize) -> usize {
+        let offset = addr - zone_base;
+
+        zone_base + (offset ^ Self::block_size(order))
+    }
+
     /// Push a free block of the given order onto its free list.
     ///
     /// # Safety
     ///
     /// `addr` must point to a valid, unused, and properly aligned region
     /// of at least `block_size(order)` bytes.
-    unsafe fn push_free_block(
-        &mut self,
-        addr: usize,
-        order: usize,
-    ) {
+    unsafe fn push_free_block(&mut self, addr: usize, order: usize) {
         let node = addr as *mut FreeListNode;
         let index = Self::index_for(order);
 
@@ -216,11 +272,7 @@ impl BuddyAllocator {
 
     /// Remove a specific block from its free list, returning whether it
     /// was found.
-    fn remove_free_block(
-        &mut self,
-        addr: usize,
-        order: usize,
-    ) -> bool {
+    fn remove_free_block(&mut self, addr: usize, order: usize) -> bool {
         let index = Self::index_for(order);
         let target = addr as *mut FreeListNode;
 
@@ -243,7 +295,6 @@ impl BuddyAllocator {
             }
 
             prev = current;
-
             current = unsafe { (*current).next };
         }
 
@@ -252,6 +303,11 @@ impl BuddyAllocator {
 
     /// Allocate a block of the given order, splitting a larger free block
     /// if none of the exact size is available.
+    ///
+    /// Splitting never needs zone information: a block being split is by
+    /// construction wholly contained within a single zone (zones are
+    /// only ever subdivided, never merged into each other), so cutting it
+    /// in half at `addr` and `addr + block_size(order)` is always safe.
     fn allocate_order(&mut self, order: usize) -> Option<usize> {
         if order > self.max_order {
             return None;
@@ -271,14 +327,6 @@ impl BuddyAllocator {
         }
 
         Some(addr)
-    }
-
-    /// Compute the address of a block's buddy at the given order.
-    #[inline]
-    fn buddy_of(&self, addr: usize, order: usize) -> usize {
-        let offset = addr - self.heap_start;
-
-        self.heap_start + (offset ^ Self::block_size(order))
     }
 }
 
@@ -316,10 +364,16 @@ impl MemoryAllocator for BuddyAllocator {
         let mut addr = ptr as usize;
         let mut order = order;
 
-        // Repeatedly try to merge with the buddy block until the buddy
-        // is not free or we've reached the largest tracked order.
-        while order < self.max_order {
-            let buddy = self.buddy_of(addr, order);
+        let zone = self
+            .zone_for(addr)
+            .expect("freed pointer does not belong to any heap zone");
+
+        // Repeatedly try to merge with the buddy block until the buddy is
+        // not free or we've reached the top of this block's own zone.
+        // Both the buddy address and the merge ceiling are relative to
+        // this zone only, so a merge can never cross into another zone.
+        while order < zone.order {
+            let buddy = Self::buddy_addr(zone.base, addr, order);
 
             if self.remove_free_block(buddy, order) {
                 addr = cmp::min(addr, buddy);

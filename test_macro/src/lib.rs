@@ -14,7 +14,7 @@ pub fn test(
     let name_string = name.to_string();
 
     let registration_name = syn::Ident::new(
-        &format!("__SILLOS_TEST_{}", name),
+        &format!("__OXENNA_TEST_{}", name),
         name.span(),
     );
 

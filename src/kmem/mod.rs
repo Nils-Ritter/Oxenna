@@ -17,6 +17,7 @@ pub use frame::BootInfoFrameAllocator;
 pub use heap::{init_heap, LockedHeap, HEAP_SIZE, HEAP_START};
 
 use limine::request::{HhdmRequest, MemmapRequest};
+use spin::Mutex;
 use x86_64::{
     registers::control::Cr3,
     structures::paging::{OffsetPageTable, PageTable},
@@ -75,11 +76,16 @@ pub unsafe fn init() -> (
     };
 
     let frame_allocator = unsafe {
-        BootInfoFrameAllocator::new(memory_map.entries())
+        BootInfoFrameAllocator::new(
+            memory_map.entries(),
+            physical_memory_offset,
+        )
     };
 
     (mapper, frame_allocator)
 }
+pub static MAPPER: Mutex<Option<OffsetPageTable<'static>>> = Mutex::new(None);
+pub static FRAME_ALLOCATOR: Mutex<Option<BootInfoFrameAllocator>> = Mutex::new(None);
 
 /// Initialize an `OffsetPageTable` using the currently active page table.
 ///
@@ -158,7 +164,11 @@ pub unsafe fn phys_to_ptr<T>(
 ///
 /// This function is intended for debugging the early memory-management
 /// subsystem. It does not allocate or modify memory.
-pub fn mem_analyze() {
+///
+/// `frame_allocator` is needed (rather than reading only the Limine
+/// statics) so that live allocator state — currently just the free-list
+/// frame count — can be reported alongside the static memory-map data.
+pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     use crate::fb::Color;
 
     console_println_color!(
@@ -468,6 +478,48 @@ pub fn mem_analyze() {
                 "  Last usable end: NONE"
             );
         }
+    }
+
+    // ========================================================
+    // Frame allocator (live state)
+    // ========================================================
+
+    console_println_color!(
+        Color::GREEN,
+        ""
+    );
+
+    console_println_color!(
+        Color::GREEN,
+        "[FRAME ALLOCATOR]"
+    );
+
+    let free_list_frames =
+        frame_allocator.free_frame_count() as u64;
+
+    console_println_color!(
+        Color::GREEN,
+        "  Free-list frames: {}",
+        free_list_frames
+    );
+
+    console_println_color!(
+        Color::GREEN,
+        "  Free-list memory: {} KiB",
+        (free_list_frames * frame::FRAME_SIZE) / 1024
+    );
+
+    if frame_count > 0 {
+        let free_list_percent =
+            (free_list_frames as u128 * 10000)
+                / frame_count as u128;
+
+        console_println_color!(
+            Color::GREEN,
+            "  Free-list share:  {}.{}% of usable frames",
+            free_list_percent / 100,
+            free_list_percent % 100
+        );
     }
 
     // ========================================================
@@ -963,6 +1015,12 @@ pub fn mem_analyze() {
         Color::GREEN,
         "  Usable frames:  {}",
         frame_count
+    );
+
+    console_println_color!(
+        Color::GREEN,
+        "  Free-list:      {} frames",
+        free_list_frames
     );
 
     console_println_color!(

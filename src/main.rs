@@ -84,7 +84,6 @@ fn kinit(){
         KINIT_CALLED = true;
     }
 
-
     serial_print!("[STARTUP] initializing framebuf...");
     fb::init();
     fb::clear(fb::Color::BLACK);
@@ -115,9 +114,16 @@ fn kinit(){
     console_println_color!(Color::GREEN, "[OK]");
 
     console_print!("[STARTUP] initializing kmem...");
-    let (mut mapper, mut frame_allocator) = unsafe { kmem::init() };
+    let (mapper, frame_allocator) = unsafe { kmem::init() };
+
+    *kmem::MAPPER.lock() = Some(mapper);
+    *kmem::FRAME_ALLOCATOR.lock() = Some(frame_allocator);
+
     unsafe {
-        kmem::init_heap(&mut mapper, &mut frame_allocator).expect("failed to init heap");
+        kmem::init_heap(
+            kmem::MAPPER.lock().as_mut().unwrap(),
+            kmem::FRAME_ALLOCATOR.lock().as_mut().unwrap(),
+        ).expect("failed to init heap");
     }
     console_println_color!(Color::GREEN, "[OK]");
 
@@ -129,9 +135,8 @@ fn kinit(){
 }
 
 fn kernel() {
-    console::clear();
+    //console::clear();
     console_println!("Welcome to Oxenna!");
-    fb::present();
     console_print!("> ");
     fb::present();
 
@@ -139,10 +144,70 @@ fn kernel() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    console_println_color!(Color::RED, "KERNEL PANIC: {}", info);
-    serial_println!("KERNEL PANIC: {}", info);
+    // Stop the world. If a timer or keyboard interrupt fires while we're
+    // mid-panic, it could re-enter code that touches whatever just broke.
+    x86_64::instructions::interrupts::disable();
+
+    let location = info
+        .location()
+        .map(|loc| (loc.file(), loc.line(), loc.column()));
+
+    let (cr3_frame, _) = x86_64::registers::control::Cr3::read();
+    let cr3 = cr3_frame.start_address().as_u64();
+
+    let cr2 = x86_64::registers::control::Cr2::read()
+        .map(|addr| addr.as_u64())
+        .unwrap_or(0);
+
+    // ---- serial: plain text, no color codes, easy to grep in logs ----
+    serial_println!();
+    serial_println!("================================================================");
+    serial_println!("KERNEL PANIC");
+    serial_println!("================================================================");
+
+    match location {
+        Some((file, line, col)) => {
+            serial_println!("  Location: {}:{}:{}", file, line, col);
+        }
+        None => {
+            serial_println!("  Location: unknown");
+        }
+    }
+
+    serial_println!("  Message:  {}", info.message());
+    serial_println!("  CR2:      {:#018x}  (last page-fault address)", cr2);
+    serial_println!("  CR3:      {:#018x}  (active page table)", cr3);
+    serial_println!("================================================================");
+    serial_println!();
+
+    // ---- framebuffer console: same info, boxed for visibility ----
+    console_println_color!(Color::RED, "");
+    console_println_color!(Color::RED, "########################################");
+    console_println_color!(Color::RED, "#            KERNEL PANIC              #");
+    console_println_color!(Color::RED, "########################################");
+    console_println_color!(Color::RED, "");
+
+    match location {
+        Some((file, line, col)) => {
+            console_println_color!(Color::RED, "  at {}:{}:{}", file, line, col);
+        }
+        None => {
+            console_println_color!(Color::RED, "  at unknown location");
+        }
+    }
+
+    console_println_color!(Color::RED, "");
+    console_println_color!(Color::RED, "  {}", info.message());
+    console_println_color!(Color::RED, "");
+    console_println_color!(Color::RED, "  CR2: {:#018x}", cr2);
+    console_println_color!(Color::RED, "  CR3: {:#018x}", cr3);
+    console_println_color!(Color::RED, "");
+    console_println_color!(Color::RED, "  System halted.");
+    console_println_color!(Color::RED, "");
+
     fb::present();
+
     loop {
-        core::hint::spin_loop();
+        x86_64::instructions::hlt();
     }
 }

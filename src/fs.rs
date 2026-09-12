@@ -164,7 +164,7 @@ fn test_ls_missing_dir_fails() -> TestResult {
 fn test_write_read_roundtrip() -> TestResult {
     let mut fs = FS.lock();
 
-    let data = b"hello from sillos";
+    let data = b"hello from oxenna";
 
     if fs.write("/test_write_read.txt", data).is_err() {
         return TestResult::Fail("write failed unexpectedly");
