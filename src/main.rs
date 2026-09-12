@@ -135,8 +135,15 @@ fn kinit(){
 }
 
 fn kernel() {
-    console_println!("Welcome to Oxenna!");
-    console_print!("> ");
+    console::clear();
+    console_println!("Welcome to...");
+    console_println_color!(Color::BLUE, "________                                      ");
+    console_println_color!(Color::BLUE, "\\_____  \\ ___  ___ ____   ____   ____ _____   ");
+    console_println_color!(Color::BLUE, " /   |   \\\\  \\/  // __ \\ /    \\ /    \\\\__  \\  ");
+    console_println_color!(Color::BLUE, "/    |    \\>    <\\  ___/|   |  \\   |  \\/ __ \\_");
+    console_println_color!(Color::BLUE, "\\_______  /__/\\_ \\\\___  >___|  /___|  (____  /");
+    console_println_color!(Color::BLUE, "        \\/      \\/    \\/     \\/     \\/     \\/");
+    console_print!("\nType any command to get started: ");
     fb::present();
 
 }

@@ -733,7 +733,7 @@ pub fn init() {
     });
 
     with_console(|console| {
-        console.put_char(b'>');
+        console.put_char(b'$');
         console.put_char(b' ');
     });
 
@@ -831,7 +831,7 @@ pub fn receive_key(key: char) {
             }
 
             with_console(|console| {
-                console.put_char(b'>');
+                console.put_char(b'$');
                 console.put_char(b' ');
             });
         }
