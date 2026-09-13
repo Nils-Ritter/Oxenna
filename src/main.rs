@@ -6,6 +6,7 @@ extern crate alloc;
 use alloc::{boxed::Box, vec::Vec, string::String, collections::BTreeMap};
 
 mod fb;
+pub mod syscall;
 mod fs;
 mod acpi;
 mod font;
