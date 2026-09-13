@@ -15,10 +15,7 @@ use x86_64::{
 };
 
 use crate::{
-    console,
-    fb::Color,
-    gdt,
-    pic,
+    acpi, console, console_print, fb::Color, gdt, pic, shell::shutdown,
 };
 
 static IDT: Once<InterruptDescriptorTable> =
@@ -739,9 +736,20 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(
                      * so normal Unicode input can go directly
                      * to the console.
                      */
+                    let ctrl =
+                        ctrl_held();
+
                     console::receive_key(
                         character,
                     );
+
+                    match character {
+                        'l' if ctrl => {
+                            console::clear();
+                            console_print!("$ ");
+                        }
+                        _ => {}
+                    }
                 }
 
                 // ==========================================

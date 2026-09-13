@@ -167,7 +167,7 @@ fn reboot(){
     acpi::reboot();
 }
 
-fn shutdown(){
+pub fn shutdown(){
     console_println!("There currently is no support for acpi shutdown.");
     console_println!("However, qemu will close normally.");
     exit_qemu(true);
