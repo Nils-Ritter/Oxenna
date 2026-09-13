@@ -1,7 +1,6 @@
 use crate::test::{test, TestResult};
 
 use x86_64::{
-    VirtAddr,
     instructions::segmentation::{CS, Segment},
     registers::control::{Cr0, Cr3, Cr4},
 };

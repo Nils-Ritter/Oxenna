@@ -1029,6 +1029,7 @@ macro_rules! console_println_color {
 // ============================================================
 
 #[cfg(feature = "test")]
+#[allow(unused_imports)]
 mod tests {
     use crate::{console, test::{
         TestResult, test,

@@ -139,6 +139,7 @@ fn kinit(){
     console_println!();
 }
 
+#[allow(unused)]
 fn kernel() -> !{
     console::clear();
     console_println!("Welcome to...");

@@ -675,6 +675,7 @@ mod tests {
             == super::color_to_u32(color)
     }
 
+    #[allow(unused)]
     fn fill_test_pattern(
         width: usize,
         height: usize,
