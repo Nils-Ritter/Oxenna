@@ -4,7 +4,7 @@
 
 # Oxenna
 
-Oxenna is a small hobby operating system for x86_64, written in Rust.
+Oxenna is a small hobby operating system for x86_64, written in x86-Assembly and Rust.
 
 The project is intended for learning and experimentation with operating-system development,
 including kernel initialization, memory management, hardware access, interrupts,
