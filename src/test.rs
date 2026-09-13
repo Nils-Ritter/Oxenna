@@ -1,8 +1,7 @@
 pub use oxenna_test_macro::test;
 
 use crate::{
-    serial_print,
-    serial_println,
+    console, console_print, console_println,
 };
 
 pub enum TestResult {
@@ -57,11 +56,12 @@ unsafe extern "C" {
 
 #[allow(unused)]
 pub fn run() -> ! {
-    serial_println!();
-    serial_println!("========================================");
-    serial_println!("       OXENNA KERNEL TEST SUITE");
-    serial_println!("========================================");
-    serial_println!();
+    console::set_serial_mirror(true);
+    console_println!();
+    console_println!("========================================");
+    console_println!("       OXENNA KERNEL TEST SUITE");
+    console_println!("========================================");
+    console_println!();
 
     let mut total = 0usize;
     let mut passed = 0usize;
@@ -80,7 +80,7 @@ pub fn run() -> ! {
 
         total += 1;
 
-        serial_print!(
+        console_print!(
             "test {} ... ",
             test.name
         );
@@ -92,14 +92,14 @@ pub fn run() -> ! {
             TestResult::Pass => {
                 passed += 1;
 
-                serial_println!("PASS");
+                console_println!("PASS");
             }
 
             TestResult::Fail(reason) => {
                 failed += 1;
 
-                serial_println!("FAIL");
-                serial_println!(
+                console_println!("FAIL");
+                console_println!(
                     "    {}",
                     reason
                 );
@@ -111,28 +111,28 @@ pub fn run() -> ! {
         };
     }
 
-    serial_println!();
-    serial_println!("========================================");
+    console_println!();
+    console_println!("========================================");
 
-    serial_println!(
+    console_println!(
         "Tests: {} total, {} passed, {} failed",
         total,
         passed,
         failed
     );
 
-    serial_println!(
+    console_println!(
         "========================================"
     );
 
     if failed == 0 {
-        serial_println!(
+        console_println!(
             "ALL TESTS PASSED"
         );
 
         exit_qemu(true);
     } else {
-        serial_println!(
+        console_println!(
             "TESTS FAILED"
         );
 

@@ -69,7 +69,7 @@ endef
 # Default
 # ============================================================
 
-all: $(ISO)
+all: $(ISO) $(TEST_ISO)
 	$(call success,Build complete!)
 
 
@@ -265,7 +265,6 @@ test: $(TEST_ISO)
 	qemu-system-x86_64 \
 		-cdrom $(TEST_ISO) \
 		-m 256M \
-		-display none \
 		-serial stdio \
 		-monitor none \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04; \
