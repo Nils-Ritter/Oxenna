@@ -39,7 +39,7 @@ LIMINE_REPO := https://github.com/limine-bootloader/limine.git
 LIMINE_BRANCH := v9.x-binary
 
 USER_SRC := user/user.asm
-USER_BIN := user.bin
+USER_BIN := userbin/user.bin
 
 # ============================================================
 # Helpers
@@ -131,6 +131,7 @@ user: $(USER_BIN)
 
 $(USER_BIN): $(USER_SRC)
 	$(call banner,BUILDING USERSPACE)
+	@mkdir -p userbin
 
 	$(call step,Assembling $(USER_SRC)...)
 	@nasm -f bin $(USER_SRC) -o $(USER_BIN)
