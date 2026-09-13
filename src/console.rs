@@ -13,6 +13,8 @@ use crate::{
     shell,
 };
 
+use crate::test::{test, TestResult};
+
 const CHAR_WIDTH: usize = 8;
 const CHAR_HEIGHT: usize = 16;
 
@@ -1265,4 +1267,1738 @@ macro_rules! console_println_color {
             );
         }
     }};
+}
+
+// ============================================================
+// Tests
+// ============================================================
+
+#[cfg(feature = "test")]
+#[allow(unused_imports)]
+mod tests {
+    use crate::test::{
+        test,
+        TestResult,
+    };
+
+    use super::{
+        Cell,
+        Console,
+        CHAR_HEIGHT,
+        CHAR_WIDTH,
+        DEFAULT_BACKGROUND,
+        DEFAULT_FOREGROUND,
+        INPUT_SIZE,
+        MAX_COLUMNS,
+        MAX_ROWS,
+    };
+
+    fn pass() -> TestResult {
+        TestResult::Pass
+    }
+
+    // ========================================================
+    // Helpers
+    // ========================================================
+
+    /*
+     * Access a logical terminal line.
+     *
+     * `line` is an absolute logical line number, not a visible
+     * viewport row.
+     */
+    fn cell(
+        console: &Console,
+        line: usize,
+        column: usize,
+    ) -> Cell {
+        console.get_cell(
+            line,
+            column,
+        )
+    }
+
+    /*
+     * Access a currently visible viewport row.
+     */
+    fn visible_cell(
+        console: &Console,
+        row: usize,
+        column: usize,
+    ) -> Cell {
+        console.get_cell(
+            console.view_top + row,
+            column,
+        )
+    }
+
+    fn assert_cell_char(
+        console: &Console,
+        line: usize,
+        column: usize,
+        expected: u8,
+    ) -> TestResult {
+        if cell(
+            console,
+            line,
+            column,
+        ).character != expected {
+            return TestResult::Fail(
+                "terminal cell contains incorrect character",
+            );
+        }
+
+        TestResult::Pass
+    }
+
+    fn assert_visible_cell_char(
+        console: &Console,
+        row: usize,
+        column: usize,
+        expected: u8,
+    ) -> TestResult {
+        if visible_cell(
+            console,
+            row,
+            column,
+        ).character != expected {
+            return TestResult::Fail(
+                "visible terminal cell contains incorrect character",
+            );
+        }
+
+        TestResult::Pass
+    }
+
+    // ========================================================
+    // Construction
+    // ========================================================
+
+    #[test]
+    fn console_initializes_cursor_and_input_state()
+        -> TestResult
+    {
+        let console =
+            Console::new(
+                800,
+                480,
+            );
+
+        if console.cursor_x != 0 {
+            return TestResult::Fail(
+                "cursor_x is not initialized to zero",
+            );
+        }
+
+        if console.cursor_line != 0 {
+            return TestResult::Fail(
+                "cursor_line is not initialized to zero",
+            );
+        }
+
+        if console.view_top != 0 {
+            return TestResult::Fail(
+                "view_top is not initialized to zero",
+            );
+        }
+
+        if console.columns != 100 {
+            return TestResult::Fail(
+                "console column count is incorrect",
+            );
+        }
+
+        if console.rows != 30 {
+            return TestResult::Fail(
+                "console row count is incorrect",
+            );
+        }
+
+        if console.input_len != 0 {
+            return TestResult::Fail(
+                "input buffer is not empty",
+            );
+        }
+
+        if console.line_ready {
+            return TestResult::Fail(
+                "line_ready is initially set",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_calculates_columns_correctly()
+        -> TestResult
+    {
+        let console =
+            Console::new(
+                801,
+                480,
+            );
+
+        if console.columns != 100 {
+            return TestResult::Fail(
+                "console did not floor width correctly",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_calculates_rows_correctly()
+        -> TestResult
+    {
+        let console =
+            Console::new(
+                800,
+                479,
+            );
+
+        if console.rows != 29 {
+            return TestResult::Fail(
+                "console did not floor height correctly",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_handles_zero_dimensions()
+        -> TestResult
+    {
+        let console =
+            Console::new(
+                0,
+                0,
+            );
+
+        if console.columns != 0 {
+            return TestResult::Fail(
+                "zero-width console has columns",
+            );
+        }
+
+        if console.rows != 0 {
+            return TestResult::Fail(
+                "zero-height console has rows",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Character output
+    // ========================================================
+
+    #[test]
+    fn console_writes_characters()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                32,
+            );
+
+        console.write_str(
+            "abc",
+        );
+
+        if console.cursor_x != 3 {
+            return TestResult::Fail(
+                "writing characters does not advance cursor",
+            );
+        }
+
+        if console.cursor_line != 0 {
+            return TestResult::Fail(
+                "writing characters changed cursor line",
+            );
+        }
+
+        if assert_cell_char(
+            &console,
+            0,
+            0,
+            b'a',
+        ).passed() == false {
+            return TestResult::Fail(
+                "first cell does not contain a",
+            );
+        }
+
+        if assert_cell_char(
+            &console,
+            0,
+            1,
+            b'b',
+        ).passed() == false {
+            return TestResult::Fail(
+                "second cell does not contain b",
+            );
+        }
+
+        if assert_cell_char(
+            &console,
+            0,
+            2,
+            b'c',
+        ).passed() == false {
+            return TestResult::Fail(
+                "third cell does not contain c",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_writes_multiple_lines()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                64,
+            );
+
+        console.write_str(
+            "abc\ndef",
+        );
+
+        if cell(
+            &console,
+            0,
+            0,
+        ).character != b'a' {
+            return TestResult::Fail(
+                "first line is incorrect",
+            );
+        }
+
+        if cell(
+            &console,
+            1,
+            0,
+        ).character != b'd' {
+            return TestResult::Fail(
+                "second line is incorrect",
+            );
+        }
+
+        if console.cursor_line != 1 {
+            return TestResult::Fail(
+                "cursor line after multiline output is incorrect",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Newline
+    // ========================================================
+
+    #[test]
+    fn console_newline_moves_to_next_row()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                32,
+            );
+
+        console.write_str(
+            "abc\ndef",
+        );
+
+        if console.cursor_x != 3 {
+            return TestResult::Fail(
+                "cursor column after newline is incorrect",
+            );
+        }
+
+        if console.cursor_line != 1 {
+            return TestResult::Fail(
+                "newline did not advance logical line",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_multiple_newlines()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                64,
+            );
+
+        console.write_str(
+            "\n\n\n",
+        );
+
+        if console.cursor_x != 0 {
+            return TestResult::Fail(
+                "multiple newlines changed column",
+            );
+        }
+
+        if console.cursor_line != 3 {
+            return TestResult::Fail(
+                "multiple newlines produced wrong logical line",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Carriage return
+    // ========================================================
+
+    #[test]
+    fn console_carriage_return_resets_column()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                32,
+            );
+
+        console.write_str(
+            "abcdef\rxy",
+        );
+
+        if console.cursor_x != 2 {
+            return TestResult::Fail(
+                "carriage return did not reset column",
+            );
+        }
+
+        if console.cursor_line != 0 {
+            return TestResult::Fail(
+                "carriage return changed logical line",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_carriage_return_overwrites_cells()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                32,
+            );
+
+        console.write_str(
+            "abcdef\rxy",
+        );
+
+        if cell(
+            &console,
+            0,
+            0,
+        ).character != b'x' {
+            return TestResult::Fail(
+                "carriage return did not overwrite first cell",
+            );
+        }
+
+        if cell(
+            &console,
+            0,
+            1,
+        ).character != b'y' {
+            return TestResult::Fail(
+                "carriage return did not overwrite second cell",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Tabs
+    // ========================================================
+
+    #[test]
+    fn console_tab_advances_to_next_tab_stop()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                32,
+            );
+
+        console.write_str(
+            "a\t",
+        );
+
+        if console.cursor_x != 4 {
+            return TestResult::Fail(
+                "tab did not advance to next tab stop",
+            );
+        }
+
+        console.write_str(
+            "b\t",
+        );
+
+        if console.cursor_x != 8 {
+            return TestResult::Fail(
+                "second tab did not advance correctly",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_tab_from_tab_stop_advances()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                32,
+            );
+
+        console.write_str(
+            "abcd\t",
+        );
+
+        if console.cursor_x != 8 {
+            return TestResult::Fail(
+                "tab from existing stop is incorrect",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_tab_at_right_edge_wraps()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                32,
+                32,
+            );
+
+        console.write_str(
+            "abc\t",
+        );
+
+        if console.cursor_line != 1 {
+            return TestResult::Fail(
+                "tab did not wrap at right edge",
+            );
+        }
+
+        if console.cursor_x != 0 {
+            return TestResult::Fail(
+                "tab wrap did not reset column",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Wrapping
+    // ========================================================
+
+    #[test]
+    fn console_wraps_at_right_edge()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                16,
+                32,
+            );
+
+        console.write_str(
+            "ab",
+        );
+
+        if console.cursor_x != 0 {
+            return TestResult::Fail(
+                "console did not wrap at right edge",
+            );
+        }
+
+        if console.cursor_line != 1 {
+            return TestResult::Fail(
+                "console did not advance logical line after wrapping",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_wrap_preserves_characters()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                16,
+                32,
+            );
+
+        console.write_str(
+            "ab",
+        );
+
+        if cell(
+            &console,
+            0,
+            0,
+        ).character != b'a' {
+            return TestResult::Fail(
+                "wrapped line lost first character",
+            );
+        }
+
+        if cell(
+            &console,
+            0,
+            1,
+        ).character != b'b' {
+            return TestResult::Fail(
+                "wrapped line lost second character",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Backspace
+    // ========================================================
+
+    #[test]
+    fn console_backspace_moves_cursor_back()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                32,
+            );
+
+        console.write_str(
+            "abc",
+        );
+
+        console.write_str(
+            "\u{8}",
+        );
+
+        if console.cursor_x != 2 {
+            return TestResult::Fail(
+                "backspace did not move cursor backwards",
+            );
+        }
+
+        if console.cursor_line != 0 {
+            return TestResult::Fail(
+                "backspace changed logical line",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_backspace_clears_cell()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                32,
+            );
+
+        console.write_str(
+            "abc",
+        );
+
+        console.write_str(
+            "\u{8}",
+        );
+
+        if cell(
+            &console,
+            0,
+            2,
+        ).character != b' ' {
+            return TestResult::Fail(
+                "backspace did not clear cell",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_backspace_at_origin_is_safe()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                32,
+            );
+
+        console.write_str(
+            "\u{8}",
+        );
+
+        if console.cursor_x != 0
+            || console.cursor_line != 0
+        {
+            return TestResult::Fail(
+                "backspace at origin moved cursor",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Clear
+    // ========================================================
+
+    #[test]
+    fn console_clear_resets_cursor()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                800,
+                480,
+            );
+
+        console.write_str(
+            "hello\nworld",
+        );
+
+        console.clear();
+
+        if console.cursor_x != 0
+            || console.cursor_line != 0
+            || console.view_top != 0
+        {
+            return TestResult::Fail(
+                "clear did not reset cursor/view",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_clear_resets_input()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                800,
+                480,
+            );
+
+        console.input[..5]
+            .copy_from_slice(
+                b"hello",
+            );
+
+        console.input_len = 5;
+        console.line_ready = true;
+
+        console.clear();
+
+        if console.input_len != 0 {
+            return TestResult::Fail(
+                "clear did not reset input length",
+            );
+        }
+
+        if console.line_ready {
+            return TestResult::Fail(
+                "clear did not reset line_ready",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_clear_resets_cells()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                800,
+                480,
+            );
+
+        console.write_str(
+            "hello world",
+        );
+
+        console.clear();
+
+        for row in 0..console.rows {
+            for column in 0..console.columns {
+                if cell(
+                    &console,
+                    row,
+                    column,
+                ).character != b' ' {
+                    return TestResult::Fail(
+                        "clear left non-empty terminal cell",
+                    );
+                }
+            }
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Scrolling
+    // ========================================================
+
+    #[test]
+    fn console_scroll_moves_logical_lines_up()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                3 * CHAR_HEIGHT,
+            );
+
+        /*
+         * Three terminal rows:
+         *
+         *     row 0 = A
+         *     row 1 = B
+         *     row 2 = C
+         */
+
+        console.write_str(
+            "A\nB\nC",
+        );
+
+        /*
+         * Force a newline at the bottom.
+         *
+         * Logical lines:
+         *
+         *     line 0 = A
+         *     line 1 = B
+         *     line 2 = C
+         *     line 3 = empty
+         *
+         * Viewport:
+         *
+         *     row 0 = B
+         *     row 1 = C
+         *     row 2 = empty
+         */
+
+        console.write_str(
+            "\n",
+        );
+
+        if console.view_top != 1 {
+            return TestResult::Fail(
+                "viewport did not move to the correct line",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            0,
+            0,
+        ).character != b'B' {
+            return TestResult::Fail(
+                "scroll did not move second line to first visible row",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            1,
+            0,
+        ).character != b'C' {
+            return TestResult::Fail(
+                "scroll did not move third line to second visible row",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            2,
+            0,
+        ).character != b' ' {
+            return TestResult::Fail(
+                "scroll did not clear new bottom row",
+            );
+        }
+
+        if console.cursor_line != 3 {
+            return TestResult::Fail(
+                "cursor logical line is incorrect after scroll",
+            );
+        }
+
+        if console.cursor_row() != 2 {
+            return TestResult::Fail(
+                "cursor is not on bottom visible row after scroll",
+            );
+        }
+
+        if console.cursor_x != 0 {
+            return TestResult::Fail(
+                "cursor column is incorrect after scroll",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_scroll_preserves_entire_lines()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                40,
+                3 * CHAR_HEIGHT,
+            );
+
+        console.write_str(
+            "AAAA\nBBBB\nCCCC\n",
+        );
+
+        /*
+         * Viewport:
+         *
+         *     row 0 = BBBB
+         *     row 1 = CCCC
+         *     row 2 = empty
+         */
+
+        if visible_cell(
+            &console,
+            0,
+            0,
+        ).character != b'B' {
+            return TestResult::Fail(
+                "scroll corrupted first character",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            0,
+            3,
+        ).character != b'B' {
+            return TestResult::Fail(
+                "scroll corrupted first line",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            1,
+            0,
+        ).character != b'C' {
+            return TestResult::Fail(
+                "scroll corrupted second line",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            1,
+            3,
+        ).character != b'C' {
+            return TestResult::Fail(
+                "scroll corrupted second line end",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_manual_scrolling_changes_viewport_only()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                3 * CHAR_HEIGHT,
+            );
+
+        console.write_str(
+            "A\nB\nC\nD\nE",
+        );
+
+        /*
+         * Logical lines:
+         *
+         *     0 = A
+         *     1 = B
+         *     2 = C
+         *     3 = D
+         *     4 = E
+         *
+         * Live viewport:
+         *
+         *     C
+         *     D
+         *     E
+         */
+
+        if console.view_top != 2 {
+            return TestResult::Fail(
+                "initial live viewport is incorrect",
+            );
+        }
+
+        if console.cursor_line != 4 {
+            return TestResult::Fail(
+                "initial cursor logical line is incorrect",
+            );
+        }
+
+        console.scroll_up(
+            1,
+        );
+
+        /*
+         * Viewport is now:
+         *
+         *     B
+         *     C
+         *     D
+         */
+
+        if console.view_top != 1 {
+            return TestResult::Fail(
+                "scroll_up moved to incorrect viewport",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            0,
+            0,
+        ).character != b'B' {
+            return TestResult::Fail(
+                "scroll_up exposed incorrect line",
+            );
+        }
+
+        if console.cursor_line != 4 {
+            return TestResult::Fail(
+                "scroll_up changed cursor logical line",
+            );
+        }
+
+        console.scroll_down(
+            1,
+        );
+
+        if console.view_top != 2 {
+            return TestResult::Fail(
+                "scroll_down did not return to live viewport",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            0,
+            0,
+        ).character != b'C' {
+            return TestResult::Fail(
+                "scroll_down exposed incorrect line",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_scroll_up_clamps_at_oldest_line()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                3 * CHAR_HEIGHT,
+            );
+
+        console.write_str(
+            "A\nB\nC\nD\nE",
+        );
+
+        console.scroll_up(
+            usize::MAX,
+        );
+
+        if console.view_top != 0 {
+            return TestResult::Fail(
+                "scroll_up did not clamp at oldest line",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            0,
+            0,
+        ).character != b'A' {
+            return TestResult::Fail(
+                "oldest visible line is incorrect",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            1,
+            0,
+        ).character != b'B' {
+            return TestResult::Fail(
+                "second visible history line is incorrect",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            2,
+            0,
+        ).character != b'C' {
+            return TestResult::Fail(
+                "third visible history line is incorrect",
+            );
+        }
+
+        if console.cursor_line != 4 {
+            return TestResult::Fail(
+                "scroll_up changed cursor logical line",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_scroll_down_clamps_at_live_view()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                3 * CHAR_HEIGHT,
+            );
+
+        console.write_str(
+            "A\nB\nC\nD\nE",
+        );
+
+        console.scroll_up(
+            usize::MAX,
+        );
+
+        console.scroll_down(
+            usize::MAX,
+        );
+
+        if console.view_top != 2 {
+            return TestResult::Fail(
+                "scroll_down did not clamp at live viewport",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            0,
+            0,
+        ).character != b'C' {
+            return TestResult::Fail(
+                "live viewport has incorrect first line",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            1,
+            0,
+        ).character != b'D' {
+            return TestResult::Fail(
+                "live viewport has incorrect second line",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            2,
+            0,
+        ).character != b'E' {
+            return TestResult::Fail(
+                "live viewport has incorrect third line",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Colors
+    // ========================================================
+
+    #[test]
+    fn console_default_colors_are_correct()
+        -> TestResult
+    {
+        let console =
+            Console::new(
+                800,
+                480,
+            );
+
+        if console.foreground
+            != DEFAULT_FOREGROUND {
+            return TestResult::Fail(
+                "default foreground color is incorrect",
+            );
+        }
+
+        if console.background
+            != DEFAULT_BACKGROUND {
+            return TestResult::Fail(
+                "default background color is incorrect",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_set_foreground_changes_color()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                800,
+                480,
+            );
+
+        console.set_foreground(
+            crate::fb::Color::RED,
+        );
+
+        if console.foreground
+            != crate::fb::Color::RED {
+            return TestResult::Fail(
+                "set_foreground failed",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_set_background_changes_color()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                800,
+                480,
+            );
+
+        console.set_background(
+            crate::fb::Color::BLUE,
+        );
+
+        if console.background
+            != crate::fb::Color::BLUE {
+            return TestResult::Fail(
+                "set_background failed",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_cells_store_colors()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                800,
+                480,
+            );
+
+        console.set_foreground(
+            crate::fb::Color::RED,
+        );
+
+        console.set_background(
+            crate::fb::Color::BLUE,
+        );
+
+        console.write_str(
+            "X",
+        );
+
+        let cell =
+            cell(
+                &console,
+                0,
+                0,
+            );
+
+        if cell.foreground
+            != crate::fb::Color::RED {
+            return TestResult::Fail(
+                "cell did not store foreground color",
+            );
+        }
+
+        if cell.background
+            != crate::fb::Color::BLUE {
+            return TestResult::Fail(
+                "cell did not store background color",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Input
+    // ========================================================
+
+    #[test]
+    fn console_read_line_returns_none_until_ready()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                32,
+            );
+
+        let mut buffer =
+            [0u8; 16];
+
+        if console
+            .read_line(
+                &mut buffer,
+            )
+            .is_some() {
+            return TestResult::Fail(
+                "read_line returned line before Enter",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_receive_key_stores_input()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                800,
+                480,
+            );
+
+        console.receive_key(
+            'h',
+        );
+
+        console.receive_key(
+            'i',
+        );
+
+        if console.input_len != 2 {
+            return TestResult::Fail(
+                "receive_key stored incorrect input length",
+            );
+        }
+
+        if console.input[0] != b'h'
+            || console.input[1] != b'i' {
+            return TestResult::Fail(
+                "receive_key stored incorrect characters",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_enter_marks_line_ready()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                800,
+                480,
+            );
+
+        console.receive_key(
+            'h',
+        );
+
+        console.receive_key(
+            'i',
+        );
+
+        console.receive_key(
+            '\n',
+        );
+
+        if !console.line_ready {
+            return TestResult::Fail(
+                "Enter did not mark line ready",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_read_line_consumes_input()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                32,
+            );
+
+        console.input[..5]
+            .copy_from_slice(
+                b"hello",
+            );
+
+        console.input_len = 5;
+        console.line_ready = true;
+
+        let mut buffer =
+            [0u8; 16];
+
+        let length =
+            match console.read_line(
+                &mut buffer,
+            ) {
+                Some(length) => length,
+
+                None => {
+                    return TestResult::Fail(
+                        "read_line did not return ready line",
+                    );
+                }
+            };
+
+        if length != 5 {
+            return TestResult::Fail(
+                "read_line returned incorrect length",
+            );
+        }
+
+        if &buffer[..5]
+            != b"hello" {
+            return TestResult::Fail(
+                "read_line returned incorrect contents",
+            );
+        }
+
+        if console.input_len != 0 {
+            return TestResult::Fail(
+                "read_line did not consume input",
+            );
+        }
+
+        if console.line_ready {
+            return TestResult::Fail(
+                "read_line did not clear line_ready",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_read_line_truncates_destination()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                32,
+            );
+
+        console.input[..6]
+            .copy_from_slice(
+                b"abcdef",
+            );
+
+        console.input_len = 6;
+        console.line_ready = true;
+
+        let mut buffer =
+            [0u8; 3];
+
+        let length =
+            match console.read_line(
+                &mut buffer,
+            ) {
+                Some(length) => length,
+
+                None => {
+                    return TestResult::Fail(
+                        "read_line did not return ready line",
+                    );
+                }
+            };
+
+        if length != 3 {
+            return TestResult::Fail(
+                "read_line did not truncate",
+            );
+        }
+
+        if &buffer != b"abc" {
+            return TestResult::Fail(
+                "truncated line has incorrect contents",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Input limits
+    // ========================================================
+
+    #[test]
+    fn console_input_cannot_exceed_input_size()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                1920,
+                1080,
+            );
+
+        for _ in 0..(INPUT_SIZE + 100) {
+            console.receive_key(
+                'a',
+            );
+        }
+
+        if console.input_len
+            != INPUT_SIZE {
+            return TestResult::Fail(
+                "input buffer exceeded INPUT_SIZE",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Control characters
+    // ========================================================
+
+    #[test]
+    fn console_ignores_unknown_control_characters()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                800,
+                480,
+            );
+
+        console.write_str(
+            "abc",
+        );
+
+        let x =
+            console.cursor_x;
+
+        let line =
+            console.cursor_line;
+
+        console.put_char(
+            0x01,
+        );
+
+        console.put_char(
+            0x02,
+        );
+
+        console.put_char(
+            0x7f,
+        );
+
+        if console.cursor_x != x {
+            return TestResult::Fail(
+                "unknown control character moved cursor",
+            );
+        }
+
+        if console.cursor_line != line {
+            return TestResult::Fail(
+                "unknown control character moved logical line",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Long output
+    // ========================================================
+
+    #[test]
+    fn console_handles_long_output()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                800,
+                480,
+            );
+
+        /*
+         * Deliberately produce much more output than the
+         * visible screen can hold.
+         */
+
+        for _ in 0..500 {
+            console.write_str(
+                "hello world\n",
+            );
+        }
+
+        /*
+         * cursor_line is absolute and is therefore expected to
+         * be much larger than the number of visible rows.
+         */
+        if console.cursor_x
+            >= console.columns {
+            return TestResult::Fail(
+                "cursor escaped columns after long output",
+            );
+        }
+
+        if console.cursor_row()
+            >= console.rows {
+            return TestResult::Fail(
+                "cursor escaped visible rows after long output",
+            );
+        }
+
+        if console.cursor_line
+            < console.view_top {
+            return TestResult::Fail(
+                "cursor moved above viewport",
+            );
+        }
+
+        if console.view_top
+            != console.live_view_top() {
+            return TestResult::Fail(
+                "long output left viewport away from live view",
+            );
+        }
+
+        pass()
+    }
+
+    // ========================================================
+    // Repeated clear/write
+    // ========================================================
+
+    #[test]
+    fn console_repeated_clear_and_write_is_stable()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                800,
+                480,
+            );
+
+        for _ in 0..20 {
+            console.clear();
+
+            console.write_str(
+                "hello\nworld",
+            );
+
+            if console.cursor_line != 1 {
+                return TestResult::Fail(
+                    "repeated clear/write corrupted cursor line",
+                );
+            }
+
+            if console.cursor_x != 5 {
+                return TestResult::Fail(
+                    "repeated clear/write corrupted cursor column",
+                );
+            }
+
+            if console.view_top != 0 {
+                return TestResult::Fail(
+                    "repeated clear/write corrupted viewport",
+                );
+            }
+
+            if cell(
+                &console,
+                0,
+                0,
+            ).character != b'h' {
+                return TestResult::Fail(
+                    "repeated clear/write corrupted cells",
+                );
+            }
+        }
+
+        pass()
+    }
 }

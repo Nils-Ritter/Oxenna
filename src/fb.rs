@@ -23,6 +23,7 @@ hardware framebuffer.
 use core::ptr;
 
 use limine::request::FramebufferRequest;
+use crate::test::{test, TestResult};
 
 #[used]
 #[unsafe(link_section = ".limine_reqs")]
