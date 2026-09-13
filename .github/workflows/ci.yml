@@ -49,12 +49,7 @@ jobs:
           components: rust-src
 
       - name: Run kernel tests
-        run: make test-iso && qemu-system-x86_64 \
-            -cdrom oxenna_tests.iso \
-            -m 256M \
-            -serial stdio \
-            -monitor none \
-            -device isa-debug-exit,iobase=0xf4,iosize=0x04; \
+        run: make test-iso && qemu-system-x86_64 -cdrom oxenna_tests.iso -m 256M -serial stdio -monitor none -device isa-debug-exit,iobase=0xf4,iosize=0x04; 
 
 
   release:
