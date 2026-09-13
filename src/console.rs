@@ -236,7 +236,6 @@ impl Console {
     // Colors
     // ========================================================
 
-    #[expect(unused)]
     pub fn set_foreground(
         &mut self,
         color: Color,
@@ -244,7 +243,6 @@ impl Console {
         self.foreground = color;
     }
 
-    #[expect(unused)]
     pub fn set_background(
         &mut self,
         color: Color,
@@ -252,14 +250,12 @@ impl Console {
         self.background = color;
     }
 
-    #[expect(unused)]
     pub fn get_background(
         &mut self,
     ) -> Color {
         self.background
     }
 
-    #[expect(unused)]
     pub fn get_foreground(
         &mut self,
     ) -> Color {
@@ -326,6 +322,7 @@ impl Console {
     // Render row
     // ========================================================
 
+    #[allow(unused)]
     fn render_row(
         &self,
         row: usize,
@@ -352,6 +349,7 @@ impl Console {
     This is NOT used when typing normal characters.
     */
 
+    #[allow(unused)]
     pub fn render(&self) {
         fb::clear(
             self.background,
@@ -852,6 +850,7 @@ pub fn receive_key(key: char) {
 // Read line
 // ============================================================
 
+#[allow(unused)]
 pub fn read_line(
     buffer: &mut [u8],
 ) -> Option<usize> {
@@ -898,6 +897,7 @@ pub fn serial_mirror_enabled() -> bool {
     )
 }
 
+#[allow(unused)]
 pub fn write_fmt_mirrored(
     args: core::fmt::Arguments<'_>,
 ) {
@@ -908,6 +908,7 @@ pub fn write_fmt_mirrored(
     }
 }
 
+#[allow(unused)]
 pub fn write_fmt_color_mirrored(
     color: crate::fb::Color,
     args: core::fmt::Arguments<'_>,

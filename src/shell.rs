@@ -1,9 +1,8 @@
 extern crate alloc;
 use core::alloc::Layout;
 use alloc::alloc::{alloc, dealloc};
-use x86_64::{VirtAddr, structures::paging::{PageTable, Translate}};
 
-use crate::{acpi, console::{self, Console, clear, with_console}, console_print, console_println, console_println_color, fb::{self, Color}, fs::{Entry, FS}, kmem::{self, FRAME_ALLOCATOR}, test::exit_qemu};
+use crate::{acpi, console::{self, Console, with_console}, console_print, console_println, console_println_color, fb::{self, Color}, fs::{Entry, FS}, kmem::{self, FRAME_ALLOCATOR}, test::exit_qemu};
 use crate::test::TestResult;
 use crate::test::test;
 

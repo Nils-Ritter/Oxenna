@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
+#![allow(non_upper_case_globals)]
 #![feature(abi_x86_interrupt)]
 
 extern crate alloc;
-use alloc::{boxed::Box, vec::Vec, string::String, collections::BTreeMap};
 
 mod fb;
 pub mod syscall;
@@ -32,7 +32,7 @@ mod userspace_test;
 #[path = "../tests/interrupts.rs"]
 mod interrupts_test;
 
-use crate::{console::with_console, fb::Color};
+use crate::{fb::Color, kmem::heap::init_heap};
 pub use crate::test::{TestResult, test};
 
 extern crate oxenna_test_macro;
@@ -125,7 +125,7 @@ fn kinit(){
     *kmem::FRAME_ALLOCATOR.lock() = Some(frame_allocator);
 
     unsafe {
-        kmem::init_heap(
+        init_heap(
             kmem::MAPPER.lock().as_mut().unwrap(),
             kmem::FRAME_ALLOCATOR.lock().as_mut().unwrap(),
         ).expect("failed to init heap");

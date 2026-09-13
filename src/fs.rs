@@ -22,7 +22,6 @@ pub enum FsError {
     IsADirectory,
 }
 
-#[expect(unused)]
 pub trait FileSystem {
     fn read(&self, path: &str) -> Result<Vec<u8>, FsError>;
     fn write(&mut self, path: &str, data: &[u8]) -> Result<(), FsError>;

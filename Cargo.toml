@@ -7,7 +7,6 @@ edition = "2024"
 [dependencies]
 limine = "0.6.5"
 uart_16550 = "0.6.0"
-volatile = "0.2.6"
 spin = "0.5.2"
 x86_64 = "0.15.5"
 pic8259 = "0.11.0"

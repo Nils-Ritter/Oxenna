@@ -130,6 +130,7 @@ impl LockedHeap {
     ///
     /// The supplied memory range must be valid writable memory and must not
     /// overlap any existing allocation.
+    #[allow(unused)]
     pub unsafe fn init(&self, heap_start: usize, heap_size: usize) {
         unsafe {
             self.inner.lock().init(heap_start, heap_size);

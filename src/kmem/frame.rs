@@ -104,6 +104,7 @@ impl BootInfoFrameAllocator {
     ///
     /// This value does not account for memory explicitly reserved by the
     /// allocator.
+    #[allow(unused)]
     pub fn usable_memory(&self) -> u64 {
         self.memory_map
             .iter()
@@ -122,6 +123,7 @@ impl BootInfoFrameAllocator {
     /// Must be called before any frames are allocated or freed, since
     /// ranges reserved afterwards are not retroactively removed from the
     /// free list.
+    #[allow(unused)]
     pub fn reserve(&mut self, start: u64, size: u64) {
         let end = start
             .checked_add(size)
@@ -162,6 +164,7 @@ impl BootInfoFrameAllocator {
     }
 
     /// Check whether a physical frame lies inside a reserved range.
+    #[allow(unused)]
     fn is_reserved(&self, frame: u64) -> bool {
         self.reserved[..self.reserved_count]
             .iter()

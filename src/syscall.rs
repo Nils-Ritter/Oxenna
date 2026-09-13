@@ -57,11 +57,13 @@ pub struct SyscallFrame {
 #[unsafe(no_mangle)]
 pub static mut SYSCALL_USER_RSP: u64 = 0;
 
-/// Assembly entry point for SYSCALL.
-///
-/// This is implemented by `global_asm!` below. The declaration
-/// here makes the linker symbol visible to Rust so that gdt.rs
-/// can put its address into IA32_LSTAR.
+/*
+Assembly entry point for SYSCALL.
+
+This is implemented by `global_asm!` below. The declaration
+here makes the linker symbol visible to Rust so that gdt.rs
+can put its address into IA32_LSTAR.
+*/
 unsafe extern "C" {
     pub fn oxenna_syscall_entry();
 }
@@ -105,7 +107,6 @@ pub fn syscall_entry_address() -> x86_64::VirtAddr {
  */
 global_asm!(
     r#"
-    .intel_syntax noprefix
 
     .globl oxenna_syscall_entry
     .type oxenna_syscall_entry, @function
@@ -254,8 +255,6 @@ oxenna_syscall_entry:
     sysretq
 
     .size oxenna_syscall_entry, .-oxenna_syscall_entry
-
-    .att_syntax
     "#,
     user_rsp = sym SYSCALL_USER_RSP,
     kernel_stack = sym crate::gdt::SYSCALL_KERNEL_STACK_TOP,

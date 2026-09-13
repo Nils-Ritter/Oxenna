@@ -40,7 +40,6 @@ pub struct Color {
     pub b: u8,
 }
 
-#[expect(unused)]
 impl Color {
     pub const BLACK: Color = Color {
         r: 0,
@@ -592,6 +591,7 @@ pub fn present() {
 // Full Present
 // ============================================================
 
+#[allow(unused)]
 pub fn present_full() {
     let info = info();
 
@@ -619,6 +619,7 @@ pub fn height() -> usize {
     info().height
 }
 
+#[allow(unused)]
 #[inline]
 pub fn pitch() -> usize {
     info().front_pitch

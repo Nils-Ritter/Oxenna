@@ -14,7 +14,7 @@ pub mod heap;
 pub mod memtests;
 
 pub use frame::BootInfoFrameAllocator;
-pub use heap::{init_heap, LockedHeap, HEAP_SIZE, HEAP_START};
+pub use heap::{HEAP_SIZE, HEAP_START};
 
 use limine::request::{HhdmRequest, MemmapRequest};
 use spin::Mutex;
