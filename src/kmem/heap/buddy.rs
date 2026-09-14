@@ -56,7 +56,7 @@ const ORDER_COUNT: usize = MAX_ORDER - MIN_ORDER + 1;
 const MAX_ZONES: usize = 32;
 
 /// Intrusive free-list node stored inside a free block.
-struct FreeListNode {
+pub struct FreeListNode {
     next: *mut FreeListNode,
 }
 
@@ -321,6 +321,7 @@ impl BuddyAllocator {
         false
     }
 
+    #[allow(unused)]
     pub fn contains_free_block(
         &self,
         addr: usize,

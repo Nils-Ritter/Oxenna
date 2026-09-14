@@ -1,6 +1,10 @@
 use core::{
     fmt,
     mem::MaybeUninit,
+    sync::atomic::{
+        AtomicBool,
+        Ordering,
+    },
 };
 
 use crate::{
@@ -9,20 +13,26 @@ use crate::{
     shell,
 };
 
+use crate::test::{test, TestResult};
+
 const CHAR_WIDTH: usize = 8;
 const CHAR_HEIGHT: usize = 16;
 
-const DEFAULT_FOREGROUND: Color =
-    Color::WHITE;
-
-const DEFAULT_BACKGROUND: Color =
-    Color::BLACK;
+const DEFAULT_FOREGROUND: Color = Color::WHITE;
+const DEFAULT_BACKGROUND: Color = Color::BLACK;
 
 const INPUT_SIZE: usize = 256;
 
 const MAX_COLUMNS: usize = 1920 / CHAR_WIDTH;
 const MAX_ROWS: usize = 1080 / CHAR_HEIGHT;
 
+/*
+ * Number of logical terminal lines retained in scrollback.
+ *
+ * This is a ring buffer. Scrolling never copies terminal cell
+ * data around.
+ */
+const SCROLLBACK_ROWS: usize = MAX_ROWS * 6;
 
 // ============================================================
 // Cell
@@ -31,9 +41,7 @@ const MAX_ROWS: usize = 1080 / CHAR_HEIGHT;
 #[derive(Clone, Copy)]
 struct Cell {
     character: u8,
-
     foreground: Color,
-
     background: Color,
 }
 
@@ -46,18 +54,18 @@ impl Cell {
 }
 
 /*
-The terminal cell buffer is fixed-size.
-
-At 1920x1080:
-
-    240 columns × 67 rows
-
-No heap allocation.
-*/
-
-static mut CELLS:
-    [Cell; MAX_COLUMNS * MAX_ROWS] =
-    [Cell::EMPTY; MAX_COLUMNS * MAX_ROWS];
+ * Fixed-size logical line ring buffer.
+ *
+ * Logical line:
+ *
+ *     line
+ *
+ * maps to:
+ *
+ *     (line % SCROLLBACK_ROWS) * MAX_COLUMNS
+ */
+static mut CELLS: [Cell; MAX_COLUMNS * SCROLLBACK_ROWS] =
+    [Cell::EMPTY; MAX_COLUMNS * SCROLLBACK_ROWS];
 
 // ============================================================
 // Console
@@ -67,7 +75,16 @@ pub struct Console {
     font: font::Font,
 
     cursor_x: usize,
-    cursor_y: usize,
+
+    /*
+     * Absolute logical line containing the cursor.
+     */
+    cursor_line: usize,
+
+    /*
+     * Absolute logical line displayed at viewport row 0.
+     */
+    view_top: usize,
 
     columns: usize,
     rows: usize,
@@ -78,7 +95,6 @@ pub struct Console {
     cells: *mut Cell,
 
     input: [u8; INPUT_SIZE],
-
     input_len: usize,
     line_ready: bool,
 }
@@ -88,38 +104,39 @@ pub struct Console {
 // ============================================================
 
 impl Console {
-
     pub fn new(
         width: usize,
         height: usize,
     ) -> Self {
         let columns =
-            (width / CHAR_WIDTH)
-                .min(MAX_COLUMNS);
+            (width / CHAR_WIDTH).min(MAX_COLUMNS);
 
         let rows =
-            (height / CHAR_HEIGHT)
-                .min(MAX_ROWS);
+            (height / CHAR_HEIGHT).min(MAX_ROWS);
 
         let cells =
             core::ptr::addr_of_mut!(CELLS)
                 as *mut Cell;
 
+        /*
+         * Reset the entire static terminal storage.
+         */
         unsafe {
-            let cells =
+            let storage =
                 core::slice::from_raw_parts_mut(
                     cells,
-                    MAX_COLUMNS * MAX_ROWS,
+                    MAX_COLUMNS * SCROLLBACK_ROWS,
                 );
 
-            cells.fill(Cell::EMPTY);
+            storage.fill(Cell::EMPTY);
         }
 
         Self {
             font: font::spleen(),
 
             cursor_x: 0,
-            cursor_y: 0,
+            cursor_line: 0,
+            view_top: 0,
 
             columns,
             rows,
@@ -130,7 +147,6 @@ impl Console {
             cells,
 
             input: [0; INPUT_SIZE],
-
             input_len: 0,
             line_ready: false,
         }
@@ -142,22 +158,24 @@ impl Console {
 
     #[inline(always)]
     fn cell_index(
-        row: usize,
+        line: usize,
         column: usize,
     ) -> usize {
-        row * MAX_COLUMNS + column
+        (line % SCROLLBACK_ROWS)
+            * MAX_COLUMNS
+            + column
     }
 
     #[inline(always)]
     fn get_cell(
         &self,
-        row: usize,
+        line: usize,
         column: usize,
     ) -> Cell {
         unsafe {
             *self.cells.add(
                 Self::cell_index(
-                    row,
+                    line,
                     column,
                 ),
             )
@@ -167,33 +185,30 @@ impl Console {
     #[inline(always)]
     fn set_cell(
         &mut self,
-        row: usize,
+        line: usize,
         column: usize,
         cell: Cell,
     ) {
         unsafe {
-            self.cells.add(
-                Self::cell_index(
-                    row,
+            self.cells
+                .add(Self::cell_index(
+                    line,
                     column,
-                )
-            ).write(cell);
+                ))
+                .write(cell);
         }
     }
 
-    fn clear_row(
+    #[inline]
+    fn clear_line(
         &mut self,
-        row: usize,
+        line: usize,
     ) {
-        if row >= self.rows {
-            return;
-        }
-
         unsafe {
             let start =
                 self.cells.add(
                     Self::cell_index(
-                        row,
+                        line,
                         0,
                     ),
                 );
@@ -217,14 +232,15 @@ impl Console {
             let cells =
                 core::slice::from_raw_parts_mut(
                     self.cells,
-                    MAX_COLUMNS * MAX_ROWS,
+                    MAX_COLUMNS * SCROLLBACK_ROWS,
                 );
 
             cells.fill(Cell::EMPTY);
         }
 
         self.cursor_x = 0;
-        self.cursor_y = 0;
+        self.cursor_line = 0;
+        self.view_top = 0;
 
         self.input_len = 0;
         self.line_ready = false;
@@ -236,7 +252,6 @@ impl Console {
     // Colors
     // ========================================================
 
-    #[expect(unused)]
     pub fn set_foreground(
         &mut self,
         color: Color,
@@ -244,7 +259,6 @@ impl Console {
         self.foreground = color;
     }
 
-    #[expect(unused)]
     pub fn set_background(
         &mut self,
         color: Color,
@@ -252,14 +266,12 @@ impl Console {
         self.background = color;
     }
 
-    #[expect(unused)]
     pub fn get_background(
         &mut self,
     ) -> Color {
         self.background
     }
 
-    #[expect(unused)]
     pub fn get_foreground(
         &mut self,
     ) -> Color {
@@ -267,15 +279,220 @@ impl Console {
     }
 
     // ========================================================
-    // Render cell
+    // Scrollback bookkeeping
+    // ========================================================
+
+    #[inline(always)]
+    fn live_view_top(&self) -> usize {
+        self.cursor_line
+            .saturating_sub(
+                self.rows.saturating_sub(1),
+            )
+    }
+
+    #[inline(always)]
+    fn oldest_valid_line(&self) -> usize {
+        self.cursor_line
+            .saturating_sub(
+                SCROLLBACK_ROWS
+                    .saturating_sub(1),
+            )
+    }
+
+    #[inline(always)]
+    fn is_scrolled(&self) -> bool {
+        self.view_top != self.live_view_top()
+    }
+
+    #[inline(always)]
+    fn cursor_row(&self) -> usize {
+        self.cursor_line
+            .saturating_sub(
+                self.view_top,
+            )
+    }
+
+    /*
+     * Return to the live viewport.
+     *
+     * This only performs a full viewport render if the user
+     * actually was viewing history.
+     */
+    fn follow_bottom(&mut self) {
+        if !self.is_scrolled() {
+            return;
+        }
+
+        self.view_top =
+            self.live_view_top();
+
+        self.render();
+    }
+
+    // ========================================================
+    // Incremental history scrolling
     // ========================================================
 
     /*
-    Draw exactly one terminal cell.
+     * Scroll toward older history.
+     *
+     * IMPORTANT:
+     *
+     * The framebuffer already contains the current viewport.
+     * We therefore move the existing framebuffer pixels DOWN,
+     * exposing new rows at the TOP.
+     *
+     * Only those newly exposed rows are rendered.
+     */
+    pub fn scroll_up(
+        &mut self,
+        lines: usize,
+    ) {
+        if lines == 0
+            || self.rows == 0
+        {
+            return;
+        }
 
-    This is the hot path for typing.
-    */
+        let live_top =
+            self.live_view_top();
 
+        let oldest =
+            self.oldest_valid_line();
+
+        let current_offset =
+            live_top.saturating_sub(
+                self.view_top,
+            );
+
+        let max_offset =
+            live_top.saturating_sub(
+                oldest,
+            );
+
+        let new_offset =
+            current_offset
+                .saturating_add(lines)
+                .min(max_offset);
+
+        let actual_lines =
+            new_offset.saturating_sub(
+                current_offset,
+            );
+
+        /*
+         * Already at the oldest available history.
+         *
+         * Do absolutely nothing. In particular, don't present
+         * the framebuffer again.
+         */
+        if actual_lines == 0 {
+            return;
+        }
+
+        self.view_top =
+            live_top.saturating_sub(
+                new_offset,
+            );
+
+        let visible_lines =
+            actual_lines.min(
+                self.rows,
+            );
+
+        /*
+         * Move existing framebuffer contents DOWN.
+         *
+         * This exposes empty/new space at the TOP.
+         */
+        fb::scroll_down(
+            visible_lines * CHAR_HEIGHT,
+            self.background,
+        );
+
+        /*
+         * Only paint the newly exposed rows.
+         */
+        for row in 0..visible_lines {
+            self.render_row(row);
+        }
+    }
+
+    /*
+     * Scroll toward the live cursor.
+     *
+     * Existing framebuffer pixels move UP, exposing new rows
+     * at the BOTTOM.
+     */
+    pub fn scroll_down(
+        &mut self,
+        lines: usize,
+    ) {
+        if lines == 0
+            || self.rows == 0
+        {
+            return;
+        }
+
+        let live_top =
+            self.live_view_top();
+
+        let old_view =
+            self.view_top;
+
+        let new_view =
+            self.view_top
+                .saturating_add(lines)
+                .min(live_top);
+
+        let actual_lines =
+            new_view.saturating_sub(
+                old_view,
+            );
+
+        /*
+         * Already at the live view.
+         */
+        if actual_lines == 0 {
+            return;
+        }
+
+        self.view_top =
+            new_view;
+
+        let visible_lines =
+            actual_lines.min(
+                self.rows,
+            );
+
+        /*
+         * Move framebuffer contents UP.
+         *
+         * New space appears at the bottom.
+         */
+        fb::scroll_up(
+            visible_lines * CHAR_HEIGHT,
+            self.background,
+        );
+
+        let first_row =
+            self.rows.saturating_sub(
+                visible_lines,
+            );
+
+        /*
+         * Only paint the newly exposed bottom rows.
+         */
+        for row in first_row..self.rows {
+            self.render_row(row);
+        }
+    }
+
+    // ========================================================
+    // Rendering
+    // ========================================================
+
+    #[inline(always)]
     fn render_cell(
         &self,
         row: usize,
@@ -287,9 +504,12 @@ impl Console {
             return;
         }
 
+        let line =
+            self.view_top + row;
+
         let cell =
             self.get_cell(
-                row,
+                line,
                 column,
             );
 
@@ -300,10 +520,9 @@ impl Console {
             row * CHAR_HEIGHT;
 
         /*
-        Clear the cell first because the font only paints
-        foreground pixels.
-        */
-
+         * draw_rect establishes the complete background
+         * because the font only paints foreground pixels.
+         */
         fb::draw_rect(
             x,
             y,
@@ -322,10 +541,7 @@ impl Console {
         }
     }
 
-    // ========================================================
-    // Render row
-    // ========================================================
-
+    #[inline]
     fn render_row(
         &self,
         row: usize,
@@ -334,104 +550,51 @@ impl Console {
             return;
         }
 
+        let line =
+            self.view_top + row;
+
+        let y =
+            row * CHAR_HEIGHT;
+
         for column in 0..self.columns {
-            self.render_cell(
-                row,
-                column,
-            );
-        }
-    }
-
-    // ========================================================
-    // Full render
-    // ========================================================
-
-    /*
-    Full redraw of the terminal.
-
-    This is NOT used when typing normal characters.
-    */
-
-    pub fn render(&self) {
-        fb::clear(
-            self.background,
-        );
-
-        for row in 0..self.rows {
-            self.render_row(row);
-        }
-    }
-
-    // ========================================================
-    // Scroll
-    // ========================================================
-
-    fn scroll(&mut self) {
-        if self.rows == 0 {
-            return;
-        }
-
-        /*
-        First move the framebuffer pixels upward by exactly
-        one character height.
-
-            16 pixels
-        */
-        fb::scroll_up(
-            CHAR_HEIGHT,
-            self.background,
-        );
-
-        /*
-        Now move the terminal's logical cells upward by one row.
-
-            row 1 -> row 0
-            row 2 -> row 1
-            row 3 -> row 2
-            ...
-            row N -> row N-1
-
-        This keeps the cell buffer synchronized with the
-        framebuffer.
-        */
-
-        unsafe {
-            let cells =
-                core::slice::from_raw_parts_mut(
-                    self.cells,
-                    MAX_COLUMNS * MAX_ROWS,
+            let cell =
+                self.get_cell(
+                    line,
+                    column,
                 );
 
-            for row in 1..self.rows {
-                let src =
-                    row * MAX_COLUMNS;
+            let x =
+                column * CHAR_WIDTH;
 
-                let dst =
-                    (row - 1) * MAX_COLUMNS;
+            fb::draw_rect(
+                x,
+                y,
+                CHAR_WIDTH,
+                CHAR_HEIGHT,
+                cell.background,
+            );
 
-                cells.copy_within(
-                    src..src + self.columns,
-                    dst,
+            if cell.character != b' ' {
+                self.font.draw_char(
+                    x,
+                    y,
+                    cell.character,
+                    cell.foreground,
                 );
             }
         }
+    }
 
-        /*
-        Clear the newly exposed bottom terminal row.
-        */
-
-        self.clear_row(
-            self.rows - 1,
-        );
-
-        /*
-        Cursor is now at the beginning of the new bottom row.
-        */
-
-        self.cursor_x = 0;
-
-        self.cursor_y =
-            self.rows - 1;
+    /*
+     * Full viewport render.
+     *
+     * We intentionally don't call fb::clear() here because
+     * every terminal cell establishes its own background.
+     */
+    pub fn render(&self) {
+        for row in 0..self.rows {
+            self.render_row(row);
+        }
     }
 
     // ========================================================
@@ -445,21 +608,60 @@ impl Console {
             return;
         }
 
-        if self.cursor_y + 1 < self.rows {
-            self.cursor_y += 1;
-        } else {
-            self.scroll();
+        /*
+         * Still room below the cursor.
+         */
+        if self.cursor_line + 1 < self.rows {
+            self.cursor_line += 1;
+            return;
         }
+
+        /*
+         * Terminal output reached the bottom.
+         *
+         * The framebuffer performs the expensive pixel movement.
+         * The logical terminal buffer does not move.
+         */
+        fb::scroll_up(
+            CHAR_HEIGHT,
+            self.background,
+        );
+
+        self.cursor_line += 1;
+
+        self.view_top =
+            self.live_view_top();
+
+        /*
+         * Reused ring-buffer slot may contain stale history.
+         */
+        self.clear_line(
+            self.cursor_line,
+        );
+
+        /*
+         * Only the newly exposed bottom row needs painting.
+         */
+        self.render_row(
+            self.rows - 1,
+        );
     }
 
     // ========================================================
-    // Put character
+    // Character output
     // ========================================================
 
+    #[inline]
     fn put_char(
         &mut self,
         character: u8,
     ) {
+        /*
+         * If the user was viewing history, normal output returns
+         * to the live terminal.
+         */
+        self.follow_bottom();
+
         match character {
             b'\n' => {
                 self.newline();
@@ -502,6 +704,7 @@ impl Console {
     // Write cell
     // ========================================================
 
+    #[inline]
     fn write_cell(
         &mut self,
         character: u8,
@@ -516,42 +719,36 @@ impl Console {
             self.newline();
         }
 
-        let row =
-            self.cursor_y;
+        let line =
+            self.cursor_line;
 
         let column =
             self.cursor_x;
 
-        let cell = Cell {
-            character,
-
-            foreground:
-                self.foreground,
-
-            background:
-                self.background,
-        };
-
         self.set_cell(
-            row,
+            line,
             column,
-            cell,
+            Cell {
+                character,
+                foreground: self.foreground,
+                background: self.background,
+            },
         );
 
-        /*
-        Only this 8x16 cell gets rendered.
-        */
+        let row =
+            line.saturating_sub(
+                self.view_top,
+            );
 
+        /*
+         * Normal output changes exactly one visible cell.
+         */
         self.render_cell(
             row,
             column,
         );
 
         self.cursor_x += 1;
-
-        /*
-        Wrapping at the right edge.
-        */
 
         if self.cursor_x >= self.columns {
             self.newline();
@@ -564,11 +761,14 @@ impl Console {
 
     fn backspace(&mut self) {
         if self.cursor_x == 0 {
-            if self.cursor_y == 0 {
+            if self.cursor_line == 0 {
                 return;
             }
 
-            self.cursor_y -= 1;
+            self.cursor_line -= 1;
+
+            self.view_top =
+                self.live_view_top();
 
             self.cursor_x =
                 self.columns
@@ -578,23 +778,22 @@ impl Console {
         }
 
         self.set_cell(
-            self.cursor_y,
+            self.cursor_line,
             self.cursor_x,
             Cell::EMPTY,
         );
 
-        /*
-        Only redraw the erased character cell.
-        */
+        let row =
+            self.cursor_row();
 
         self.render_cell(
-            self.cursor_y,
+            row,
             self.cursor_x,
         );
     }
 
     // ========================================================
-    // Write string
+    // String output
     // ========================================================
 
     pub fn write_str(
@@ -609,42 +808,51 @@ impl Console {
     // ========================================================
     // Keyboard
     // ========================================================
-    pub fn receive_key(&mut self, key: char) {
-        if true { //TODO: Remove and indent
-            match key {
-                '\n' | '\r' => {
-                    self.put_char(b'\n');
 
-                    self.line_ready = true;
-                }
-
-                '\u{8}' | '\u{7f}' => {
-                    if self.input_len > 0 && self.cursor_x > 2 {
-                        self.input_len -= 1;
-                        self.put_char(8);
-                    }
-                }
-
-                character
-                    if character.is_ascii()
-                        && !character.is_ascii_control() =>
-                {
-                    if self.input_len < INPUT_SIZE {
-                        self.input[self.input_len] = character as u8;
-                        self.input_len += 1;
-
-                        self.put_char(character as u8);
-                    }
-                }
-
-                _ => {}
+    pub fn receive_key(
+        &mut self,
+        key: char,
+    ) {
+        match key {
+            '\n' | '\r' => {
+                self.put_char(b'\n');
+                self.line_ready = true;
             }
+
+            '\u{8}' | '\u{7f}' => {
+                if self.input_len > 0
+                    && self.cursor_x > 2
+                {
+                    self.input_len -= 1;
+                    self.put_char(8);
+                }
+            }
+
+            character
+                if character.is_ascii()
+                    && !character.is_ascii_control() =>
+            {
+                if self.input_len < INPUT_SIZE {
+                    self.input[
+                        self.input_len
+                    ] = character as u8;
+
+                    self.input_len += 1;
+
+                    self.put_char(
+                        character as u8,
+                    );
+                }
+            }
+
+            _ => {}
         }
     }
 
     // ========================================================
     // Read line
     // ========================================================
+
     pub fn read_line(
         &mut self,
         buffer: &mut [u8],
@@ -654,8 +862,9 @@ impl Console {
         }
 
         let length =
-            self.input_len
-                .min(buffer.len());
+            self.input_len.min(
+                buffer.len(),
+            );
 
         buffer[..length]
             .copy_from_slice(
@@ -679,7 +888,6 @@ impl fmt::Write for Console {
         text: &str,
     ) -> fmt::Result {
         self.write_str(text);
-
         Ok(())
     }
 }
@@ -688,12 +896,11 @@ impl fmt::Write for Console {
 // Global console
 // ============================================================
 
-static mut CONSOLE:
-    MaybeUninit<Console> =
+static mut CONSOLE: MaybeUninit<Console> =
     MaybeUninit::uninit();
 
-static mut CONSOLE_INITIALIZED:
-    bool = false;
+static mut CONSOLE_INITIALIZED: bool =
+    false;
 
 // ============================================================
 // Initialization
@@ -744,6 +951,7 @@ pub fn init() {
 // with_console
 // ============================================================
 
+#[inline]
 pub fn with_console<F, R>(
     f: F,
 ) -> R
@@ -778,13 +986,6 @@ pub fn write_fmt(
 ) {
     use core::fmt::Write;
 
-    /*
-    Don't call present() for every character.
-
-    Formatting "hello world" changes many cells, but we only
-    need one final presentation.
-    */
-
     with_console(|console| {
         let _ =
             console.write_fmt(args);
@@ -797,14 +998,44 @@ pub fn write_fmt_color(
     color: Color,
     args: fmt::Arguments<'_>,
 ) {
+    use core::fmt::Write;
+
     with_console(|console| {
-        let old_color = console.foreground;
+        let old_color =
+            console.foreground;
 
-        console.foreground = color;
+        console.foreground =
+            color;
 
-        let _ = write_fmt(args);
+        let _ =
+            console.write_fmt(args);
 
-        console.foreground = old_color;
+        console.foreground =
+            old_color;
+    });
+
+    fb::present();
+}
+
+// ============================================================
+// Scrolling
+// ============================================================
+
+pub fn scroll_up(
+    lines: usize,
+) {
+    with_console(|console| {
+        console.scroll_up(lines);
+    });
+
+    fb::present();
+}
+
+pub fn scroll_down(
+    lines: usize,
+) {
+    with_console(|console| {
+        console.scroll_down(lines);
     });
 
     fb::present();
@@ -813,19 +1044,30 @@ pub fn write_fmt_color(
 // ============================================================
 // Keyboard
 // ============================================================
-pub fn receive_key(key: char) {
-    if key == '\n' || key == '\r' {
-        let mut command_buffer = [0u8; INPUT_SIZE];
 
-        let length = with_console(|console| {
-            console.receive_key(key);
+pub fn receive_key(
+    key: char,
+) {
+    if key == '\n'
+        || key == '\r'
+    {
+        let mut command_buffer =
+            [0u8; INPUT_SIZE];
 
-            console.read_line(&mut command_buffer)
-        });
+        let length =
+            with_console(|console| {
+                console.receive_key(key);
+
+                console.read_line(
+                    &mut command_buffer,
+                )
+            });
 
         if let Some(length) = length {
             if let Ok(command) =
-                core::str::from_utf8(&command_buffer[..length])
+                core::str::from_utf8(
+                    &command_buffer[..length],
+                )
             {
                 shell::execute(command);
             }
@@ -852,6 +1094,7 @@ pub fn receive_key(key: char) {
 // Read line
 // ============================================================
 
+#[allow(unused)]
 pub fn read_line(
     buffer: &mut [u8],
 ) -> Option<usize> {
@@ -873,31 +1116,29 @@ pub fn clear() {
 }
 
 // ============================================================
-// Serial Mirroring
+// Serial mirroring
 // ============================================================
-
-use core::sync::atomic::{
-    AtomicBool,
-    Ordering,
-};
 
 pub static SERIAL_MIRROR: AtomicBool =
     AtomicBool::new(false);
 
-pub fn set_serial_mirror(enabled: bool) {
+pub fn set_serial_mirror(
+    enabled: bool,
+) {
     SERIAL_MIRROR.store(
         enabled,
         Ordering::Relaxed,
     );
 }
 
-#[inline]
+#[inline(always)]
 pub fn serial_mirror_enabled() -> bool {
     SERIAL_MIRROR.load(
         Ordering::Relaxed,
     )
 }
 
+#[allow(unused)]
 pub fn write_fmt_mirrored(
     args: core::fmt::Arguments<'_>,
 ) {
@@ -908,6 +1149,7 @@ pub fn write_fmt_mirrored(
     }
 }
 
+#[allow(unused)]
 pub fn write_fmt_color_mirrored(
     color: crate::fb::Color,
     args: core::fmt::Arguments<'_>,
@@ -929,7 +1171,8 @@ pub fn write_fmt_color_mirrored(
 #[macro_export]
 macro_rules! console_print {
     ($($arg:tt)*) => {{
-        let args = core::format_args!($($arg)*);
+        let args =
+            core::format_args!($($arg)*);
 
         $crate::console::write_fmt(
             args
@@ -956,10 +1199,11 @@ macro_rules! console_println {
     }};
 
     ($($arg:tt)*) => {{
-        let args = core::format_args!(
-            "{}\n",
-            core::format_args!($($arg)*)
-        );
+        let args =
+            core::format_args!(
+                "{}\n",
+                core::format_args!($($arg)*)
+            );
 
         $crate::console::write_fmt(
             args
@@ -976,7 +1220,8 @@ macro_rules! console_println {
 #[macro_export]
 macro_rules! console_print_color {
     ($color:expr, $($arg:tt)*) => {{
-        let args = core::format_args!($($arg)*);
+        let args =
+            core::format_args!($($arg)*);
 
         $crate::console::write_fmt_color(
             $color,
@@ -1005,10 +1250,11 @@ macro_rules! console_println_color {
     }};
 
     ($color:expr, $($arg:tt)*) => {{
-        let args = core::format_args!(
-            "{}\n",
-            core::format_args!($($arg)*)
-        );
+        let args =
+            core::format_args!(
+                "{}\n",
+                core::format_args!($($arg)*)
+            );
 
         $crate::console::write_fmt_color(
             $color,
@@ -1028,10 +1274,12 @@ macro_rules! console_println_color {
 // ============================================================
 
 #[cfg(feature = "test")]
+#[allow(unused_imports)]
 mod tests {
-    use crate::{console, test::{
-        TestResult, test,
-    }};
+    use crate::test::{
+        test,
+        TestResult,
+    };
 
     use super::{
         Cell,
@@ -1053,30 +1301,69 @@ mod tests {
     // Helpers
     // ========================================================
 
+    /*
+     * Access a logical terminal line.
+     *
+     * `line` is an absolute logical line number, not a visible
+     * viewport row.
+     */
     fn cell(
+        console: &Console,
+        line: usize,
+        column: usize,
+    ) -> Cell {
+        console.get_cell(
+            line,
+            column,
+        )
+    }
+
+    /*
+     * Access a currently visible viewport row.
+     */
+    fn visible_cell(
         console: &Console,
         row: usize,
         column: usize,
     ) -> Cell {
         console.get_cell(
-            row,
+            console.view_top + row,
             column,
         )
     }
 
     fn assert_cell_char(
         console: &Console,
-        row: usize,
+        line: usize,
         column: usize,
         expected: u8,
     ) -> TestResult {
         if cell(
             console,
-            row,
+            line,
             column,
         ).character != expected {
             return TestResult::Fail(
                 "terminal cell contains incorrect character",
+            );
+        }
+
+        TestResult::Pass
+    }
+
+    fn assert_visible_cell_char(
+        console: &Console,
+        row: usize,
+        column: usize,
+        expected: u8,
+    ) -> TestResult {
+        if visible_cell(
+            console,
+            row,
+            column,
+        ).character != expected {
+            return TestResult::Fail(
+                "visible terminal cell contains incorrect character",
             );
         }
 
@@ -1103,9 +1390,15 @@ mod tests {
             );
         }
 
-        if console.cursor_y != 0 {
+        if console.cursor_line != 0 {
             return TestResult::Fail(
-                "cursor_y is not initialized to zero",
+                "cursor_line is not initialized to zero",
+            );
+        }
+
+        if console.view_top != 0 {
+            return TestResult::Fail(
+                "view_top is not initialized to zero",
             );
         }
 
@@ -1223,9 +1516,9 @@ mod tests {
             );
         }
 
-        if console.cursor_y != 0 {
+        if console.cursor_line != 0 {
             return TestResult::Fail(
-                "writing characters changed cursor row",
+                "writing characters changed cursor line",
             );
         }
 
@@ -1299,6 +1592,12 @@ mod tests {
             );
         }
 
+        if console.cursor_line != 1 {
+            return TestResult::Fail(
+                "cursor line after multiline output is incorrect",
+            );
+        }
+
         pass()
     }
 
@@ -1326,9 +1625,9 @@ mod tests {
             );
         }
 
-        if console.cursor_y != 1 {
+        if console.cursor_line != 1 {
             return TestResult::Fail(
-                "newline did not advance row",
+                "newline did not advance logical line",
             );
         }
 
@@ -1355,9 +1654,9 @@ mod tests {
             );
         }
 
-        if console.cursor_y != 3 {
+        if console.cursor_line != 3 {
             return TestResult::Fail(
-                "multiple newlines produced wrong row",
+                "multiple newlines produced wrong logical line",
             );
         }
 
@@ -1388,9 +1687,9 @@ mod tests {
             );
         }
 
-        if console.cursor_y != 0 {
+        if console.cursor_line != 0 {
             return TestResult::Fail(
-                "carriage return changed row",
+                "carriage return changed logical line",
             );
         }
 
@@ -1508,7 +1807,7 @@ mod tests {
             "abc\t",
         );
 
-        if console.cursor_y != 1 {
+        if console.cursor_line != 1 {
             return TestResult::Fail(
                 "tab did not wrap at right edge",
             );
@@ -1547,9 +1846,9 @@ mod tests {
             );
         }
 
-        if console.cursor_y != 1 {
+        if console.cursor_line != 1 {
             return TestResult::Fail(
-                "console did not advance row after wrapping",
+                "console did not advance logical line after wrapping",
             );
         }
 
@@ -1621,6 +1920,12 @@ mod tests {
             );
         }
 
+        if console.cursor_line != 0 {
+            return TestResult::Fail(
+                "backspace changed logical line",
+            );
+        }
+
         pass()
     }
 
@@ -1670,7 +1975,7 @@ mod tests {
         );
 
         if console.cursor_x != 0
-            || console.cursor_y != 0
+            || console.cursor_line != 0
         {
             return TestResult::Fail(
                 "backspace at origin moved cursor",
@@ -1701,9 +2006,11 @@ mod tests {
         console.clear();
 
         if console.cursor_x != 0
-            || console.cursor_y != 0 {
+            || console.cursor_line != 0
+            || console.view_top != 0
+        {
             return TestResult::Fail(
-                "clear did not reset cursor",
+                "clear did not reset cursor/view",
             );
         }
 
@@ -1794,10 +2101,10 @@ mod tests {
 
         /*
          * Three terminal rows:
-
-             row 0 = A
-             row 1 = B
-             row 2 = C
+         *
+         *     row 0 = A
+         *     row 1 = B
+         *     row 2 = C
          */
 
         console.write_str(
@@ -1806,41 +2113,52 @@ mod tests {
 
         /*
          * Force a newline at the bottom.
+         *
+         * Logical lines:
+         *
+         *     line 0 = A
+         *     line 1 = B
+         *     line 2 = C
+         *     line 3 = empty
+         *
+         * Viewport:
+         *
+         *     row 0 = B
+         *     row 1 = C
+         *     row 2 = empty
          */
 
         console.write_str(
             "\n",
         );
 
-        /*
-         * Expected:
+        if console.view_top != 1 {
+            return TestResult::Fail(
+                "viewport did not move to the correct line",
+            );
+        }
 
-             row 0 = B
-             row 1 = C
-             row 2 = empty
-         */
-
-        if cell(
+        if visible_cell(
             &console,
             0,
             0,
         ).character != b'B' {
             return TestResult::Fail(
-                "scroll did not move second line to first",
+                "scroll did not move second line to first visible row",
             );
         }
 
-        if cell(
+        if visible_cell(
             &console,
             1,
             0,
         ).character != b'C' {
             return TestResult::Fail(
-                "scroll did not move third line to second",
+                "scroll did not move third line to second visible row",
             );
         }
 
-        if cell(
+        if visible_cell(
             &console,
             2,
             0,
@@ -1850,9 +2168,15 @@ mod tests {
             );
         }
 
-        if console.cursor_y != 2 {
+        if console.cursor_line != 3 {
             return TestResult::Fail(
-                "cursor is not on bottom row after scroll",
+                "cursor logical line is incorrect after scroll",
+            );
+        }
+
+        if console.cursor_row() != 2 {
+            return TestResult::Fail(
+                "cursor is not on bottom visible row after scroll",
             );
         }
 
@@ -1879,7 +2203,15 @@ mod tests {
             "AAAA\nBBBB\nCCCC\n",
         );
 
-        if cell(
+        /*
+         * Viewport:
+         *
+         *     row 0 = BBBB
+         *     row 1 = CCCC
+         *     row 2 = empty
+         */
+
+        if visible_cell(
             &console,
             0,
             0,
@@ -1889,7 +2221,7 @@ mod tests {
             );
         }
 
-        if cell(
+        if visible_cell(
             &console,
             0,
             3,
@@ -1899,7 +2231,7 @@ mod tests {
             );
         }
 
-        if cell(
+        if visible_cell(
             &console,
             1,
             0,
@@ -1909,13 +2241,236 @@ mod tests {
             );
         }
 
-        if cell(
+        if visible_cell(
             &console,
             1,
             3,
         ).character != b'C' {
             return TestResult::Fail(
                 "scroll corrupted second line end",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_manual_scrolling_changes_viewport_only()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                3 * CHAR_HEIGHT,
+            );
+
+        console.write_str(
+            "A\nB\nC\nD\nE",
+        );
+
+        /*
+         * Logical lines:
+         *
+         *     0 = A
+         *     1 = B
+         *     2 = C
+         *     3 = D
+         *     4 = E
+         *
+         * Live viewport:
+         *
+         *     C
+         *     D
+         *     E
+         */
+
+        if console.view_top != 2 {
+            return TestResult::Fail(
+                "initial live viewport is incorrect",
+            );
+        }
+
+        if console.cursor_line != 4 {
+            return TestResult::Fail(
+                "initial cursor logical line is incorrect",
+            );
+        }
+
+        console.scroll_up(
+            1,
+        );
+
+        /*
+         * Viewport is now:
+         *
+         *     B
+         *     C
+         *     D
+         */
+
+        if console.view_top != 1 {
+            return TestResult::Fail(
+                "scroll_up moved to incorrect viewport",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            0,
+            0,
+        ).character != b'B' {
+            return TestResult::Fail(
+                "scroll_up exposed incorrect line",
+            );
+        }
+
+        if console.cursor_line != 4 {
+            return TestResult::Fail(
+                "scroll_up changed cursor logical line",
+            );
+        }
+
+        console.scroll_down(
+            1,
+        );
+
+        if console.view_top != 2 {
+            return TestResult::Fail(
+                "scroll_down did not return to live viewport",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            0,
+            0,
+        ).character != b'C' {
+            return TestResult::Fail(
+                "scroll_down exposed incorrect line",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_scroll_up_clamps_at_oldest_line()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                3 * CHAR_HEIGHT,
+            );
+
+        console.write_str(
+            "A\nB\nC\nD\nE",
+        );
+
+        console.scroll_up(
+            usize::MAX,
+        );
+
+        if console.view_top != 0 {
+            return TestResult::Fail(
+                "scroll_up did not clamp at oldest line",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            0,
+            0,
+        ).character != b'A' {
+            return TestResult::Fail(
+                "oldest visible line is incorrect",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            1,
+            0,
+        ).character != b'B' {
+            return TestResult::Fail(
+                "second visible history line is incorrect",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            2,
+            0,
+        ).character != b'C' {
+            return TestResult::Fail(
+                "third visible history line is incorrect",
+            );
+        }
+
+        if console.cursor_line != 4 {
+            return TestResult::Fail(
+                "scroll_up changed cursor logical line",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn console_scroll_down_clamps_at_live_view()
+        -> TestResult
+    {
+        let mut console =
+            Console::new(
+                80,
+                3 * CHAR_HEIGHT,
+            );
+
+        console.write_str(
+            "A\nB\nC\nD\nE",
+        );
+
+        console.scroll_up(
+            usize::MAX,
+        );
+
+        console.scroll_down(
+            usize::MAX,
+        );
+
+        if console.view_top != 2 {
+            return TestResult::Fail(
+                "scroll_down did not clamp at live viewport",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            0,
+            0,
+        ).character != b'C' {
+            return TestResult::Fail(
+                "live viewport has incorrect first line",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            1,
+            0,
+        ).character != b'D' {
+            return TestResult::Fail(
+                "live viewport has incorrect second line",
+            );
+        }
+
+        if visible_cell(
+            &console,
+            2,
+            0,
+        ).character != b'E' {
+            return TestResult::Fail(
+                "live viewport has incorrect third line",
             );
         }
 
@@ -2304,8 +2859,8 @@ mod tests {
         let x =
             console.cursor_x;
 
-        let y =
-            console.cursor_y;
+        let line =
+            console.cursor_line;
 
         console.put_char(
             0x01,
@@ -2325,9 +2880,9 @@ mod tests {
             );
         }
 
-        if console.cursor_y != y {
+        if console.cursor_line != line {
             return TestResult::Fail(
-                "unknown control character moved row",
+                "unknown control character moved logical line",
             );
         }
 
@@ -2359,13 +2914,10 @@ mod tests {
             );
         }
 
-        if console.cursor_y
-            >= console.rows {
-            return TestResult::Fail(
-                "cursor escaped console after long output",
-            );
-        }
-
+        /*
+         * cursor_line is absolute and is therefore expected to
+         * be much larger than the number of visible rows.
+         */
         if console.cursor_x
             >= console.columns {
             return TestResult::Fail(
@@ -2373,8 +2925,33 @@ mod tests {
             );
         }
 
+        if console.cursor_row()
+            >= console.rows {
+            return TestResult::Fail(
+                "cursor escaped visible rows after long output",
+            );
+        }
+
+        if console.cursor_line
+            < console.view_top {
+            return TestResult::Fail(
+                "cursor moved above viewport",
+            );
+        }
+
+        if console.view_top
+            != console.live_view_top() {
+            return TestResult::Fail(
+                "long output left viewport away from live view",
+            );
+        }
+
         pass()
     }
+
+    // ========================================================
+    // Repeated clear/write
+    // ========================================================
 
     #[test]
     fn console_repeated_clear_and_write_is_stable()
@@ -2393,9 +2970,21 @@ mod tests {
                 "hello\nworld",
             );
 
-            if console.cursor_y != 1 {
+            if console.cursor_line != 1 {
                 return TestResult::Fail(
-                    "repeated clear/write corrupted cursor",
+                    "repeated clear/write corrupted cursor line",
+                );
+            }
+
+            if console.cursor_x != 5 {
+                return TestResult::Fail(
+                    "repeated clear/write corrupted cursor column",
+                );
+            }
+
+            if console.view_top != 0 {
+                return TestResult::Fail(
+                    "repeated clear/write corrupted viewport",
                 );
             }
 

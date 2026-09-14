@@ -28,7 +28,7 @@ use super::{
 unsafe fn allocate(
     layout: Layout,
 ) -> *mut u8 {
-    ALLOCATOR.alloc(layout)
+    unsafe { ALLOCATOR.alloc(layout) }
 }
 
 /// Free memory back to the kernel heap.
@@ -37,10 +37,10 @@ unsafe fn deallocate(
     ptr: *mut u8,
     layout: Layout,
 ) {
-    ALLOCATOR.dealloc(
+    unsafe { ALLOCATOR.dealloc(
         ptr,
         layout,
-    );
+    ) };
 }
 
 // ============================================================

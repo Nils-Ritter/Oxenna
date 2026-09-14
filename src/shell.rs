@@ -1,12 +1,10 @@
 extern crate alloc;
 use core::alloc::Layout;
 use alloc::alloc::{alloc, dealloc};
-use x86_64::{VirtAddr, structures::paging::{PageTable, Translate}};
 
-use crate::{acpi, console::{self, Console, clear, with_console}, console_print, console_println, console_println_color, fb::{self, Color}, fs::{Entry, FS}, kmem::{self, FRAME_ALLOCATOR}, test::exit_qemu};
+use crate::{acpi, console::{self, Console, with_console}, console_print, console_println, console_println_color, fb::{self, Color}, fs::{Entry, FS}, kmem::{self, FRAME_ALLOCATOR}, test::exit_qemu};
 use crate::test::TestResult;
 use crate::test::test;
-use crate::kmem::mem_analyze;
 
 pub fn execute(line: &str) {
     let mut parts = line.split_whitespace();
@@ -169,7 +167,7 @@ fn reboot(){
     acpi::reboot();
 }
 
-fn shutdown(){
+pub fn shutdown(){
     console_println!("There currently is no support for acpi shutdown.");
     console_println!("However, qemu will close normally.");
     exit_qemu(true);

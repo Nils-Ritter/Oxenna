@@ -1,5 +1,8 @@
 /target
+/target-test
 /iso_root
 /limine
+/userbin
 oxenna.iso
 oxenna_tests.iso
+user.bin

@@ -10,8 +10,13 @@ PHDRS
 SECTIONS
 {
     /*
+     * ========================================================
+     * KERNEL BASE
+     * ========================================================
+     *
      * Higher-half kernel virtual address.
      */
+
     . = 0xffffffff80000000;
 
 
@@ -19,10 +24,21 @@ SECTIONS
      * ========================================================
      * TEXT
      * ========================================================
+     *
+     * Executable, read-only kernel code.
+     *
+     * Page aligned so the page tables can eventually map
+     * these pages as:
+     *
+     *     Supervisor
+     *     Read-only
+     *     Executable
      */
 
     .text : ALIGN(4K)
     {
+        __text_start = .;
+
         /*
          * Kernel entry point must come first.
          */
@@ -32,6 +48,9 @@ SECTIONS
          * Rest of kernel code.
          */
         *(.text .text.*)
+
+        __text_end = .;
+
     } :text
 
 
@@ -39,12 +58,16 @@ SECTIONS
      * ========================================================
      * RODATA
      * ========================================================
+     *
+     * Read-only, non-executable kernel data.
      */
 
     . = ALIGN(4K);
 
     .rodata : ALIGN(4K)
     {
+        __rodata_start = .;
+
         *(.rodata .rodata.*)
 
 
@@ -52,13 +75,14 @@ SECTIONS
          * ----------------------------------------------------
          * Limine requests
          * ----------------------------------------------------
-         *
-         * These MUST remain in the final kernel image.
          */
 
         KEEP(*(.limine_req_start))
         KEEP(*(.limine_reqs))
         KEEP(*(.limine_req_end))
+
+
+        __rodata_end = .;
 
     } :rodata
 
@@ -71,8 +95,8 @@ SECTIONS
      * The #[test] procedural macro places a Test structure
      * into the .kernel_tests section.
      *
-     * We expose the beginning and end of the section so
-     * test.rs can iterate over every registered test.
+     * These structures are read-only and therefore remain
+     * inside the rodata PT_LOAD segment.
      */
 
     .kernel_tests : ALIGN(8)
@@ -90,13 +114,19 @@ SECTIONS
      * ========================================================
      * DATA
      * ========================================================
+     *
+     * Writable, non-executable kernel data.
      */
 
     . = ALIGN(4K);
 
     .data : ALIGN(4K)
     {
+        __data_start = .;
+
         *(.data .data.*)
+
+        __data_end = .;
 
     } :data
 
@@ -105,13 +135,21 @@ SECTIONS
      * ========================================================
      * BSS
      * ========================================================
+     *
+     * Writable, non-executable zero-initialized kernel data.
      */
+
+    . = ALIGN(4K);
 
     .bss : ALIGN(4K)
     {
+        __bss_start = .;
+
         *(COMMON)
 
         *(.bss .bss.*)
+
+        __bss_end = .;
 
     } :data
 

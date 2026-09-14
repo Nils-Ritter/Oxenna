@@ -16,7 +16,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get install \
-            xorriso
+            xorriso nasm
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
@@ -39,6 +39,7 @@ jobs:
         run: |
           sudo apt-get install \
             xorriso \
+            nasm \
             qemu-system-x86
 
       - name: Install Rust
@@ -48,7 +49,19 @@ jobs:
           components: rust-src
 
       - name: Run kernel tests
-        run: make test
+        run: |
+          set +e
+          make test-iso
+          qemu-system-x86_64 -cdrom oxenna_tests.iso -m 256M \
+            -serial stdio \
+            -display none \
+            -device isa-debug-exit,iobase=0xf4,iosize=0x04; \
+            status=$?
+            set -e
+            if [ "$status" -eq 33 ]; then
+              exit 0
+            fi
+            exit "$status"
 
   release:
     name: Release ISO
@@ -65,7 +78,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get install \
-            xorriso
+            xorriso nasm
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly

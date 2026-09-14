@@ -13,11 +13,17 @@ present() copies only the region of the backbuffer that has
 changed.
 
 No heap allocation is used by this framebuffer.
+
+Scrolling is performed directly in the backbuffer. The scroll
+operations use overlap-safe memory copies, then mark the affected
+screen region dirty so present() copies the result to the actual
+hardware framebuffer.
 */
 
 use core::ptr;
 
 use limine::request::FramebufferRequest;
+use crate::test::{test, TestResult};
 
 #[used]
 #[unsafe(link_section = ".limine_reqs")]
@@ -40,7 +46,6 @@ pub struct Color {
     pub b: u8,
 }
 
-#[expect(unused)]
 impl Color {
     pub const BLACK: Color = Color {
         r: 0,
@@ -390,8 +395,10 @@ pub fn draw_rect(
 /*
 Copies a rectangle inside the backbuffer.
 
-ptr::copy() is overlap-safe, making this suitable for
-scrolling.
+The source and destination may overlap.
+
+ptr::copy() is used because it has memmove semantics and is
+therefore safe for overlapping source/destination regions.
 */
 
 pub fn copy_rect(
@@ -433,25 +440,51 @@ pub fn copy_rect(
             ptr::addr_of_mut!(BACKBUFFER) as *mut u32;
 
         /*
-         * ptr::copy() handles overlapping source/destination
-         * regions correctly.
+         * When moving downward, copy from bottom to top.
+
+         * When moving upward, copy from top to bottom.
+
+         * ptr::copy() itself is overlap-safe, but choosing the
+         * natural direction also makes the intent explicit and
+         * avoids depending on implementation details of a loop.
          */
-        for row in 0..height {
-            let src =
-                back.add(
-                    (src_y + row) * info.width + src_x
-                );
 
-            let dst =
-                back.add(
-                    (dst_y + row) * info.width + dst_x
-                );
+        if dst_y > src_y {
+            for row in (0..height).rev() {
+                let src =
+                    back.add(
+                        (src_y + row) * info.width + src_x
+                    );
 
-            ptr::copy(
-                src,
-                dst,
-                width,
-            );
+                let dst =
+                    back.add(
+                        (dst_y + row) * info.width + dst_x
+                    );
+
+                ptr::copy(
+                    src,
+                    dst,
+                    width,
+                );
+            }
+        } else {
+            for row in 0..height {
+                let src =
+                    back.add(
+                        (src_y + row) * info.width + src_x
+                    );
+
+                let dst =
+                    back.add(
+                        (dst_y + row) * info.width + dst_x
+                    );
+
+                ptr::copy(
+                    src,
+                    dst,
+                    width,
+                );
+            }
         }
     }
 
@@ -471,6 +504,25 @@ pub fn copy_rect(
 Scrolls the framebuffer backbuffer upward by `pixels`.
 
 The newly exposed area at the bottom is filled with `color`.
+
+Example:
+
+    Before:
+
+        AAAA
+        BBBB
+        CCCC
+        DDDD
+
+    scroll_up(1):
+
+        BBBB
+        CCCC
+        DDDD
+        ....
+
+The operation only moves the backbuffer. The hardware
+framebuffer is updated later by present().
 */
 
 pub fn scroll_up(
@@ -488,6 +540,13 @@ pub fn scroll_up(
         return;
     }
 
+    /*
+     * Move the existing screen upward.
+
+         source:      pixels .. height
+         destination: 0      .. height - pixels
+     */
+
     copy_rect(
         0,
         pixels,
@@ -497,9 +556,88 @@ pub fn scroll_up(
         info.height - pixels,
     );
 
+    /*
+     * Clear the newly exposed bottom region.
+     */
+
     draw_rect(
         0,
         info.height - pixels,
+        info.width,
+        pixels,
+        color,
+    );
+}
+
+// ============================================================
+// Scroll down
+// ============================================================
+
+/*
+Scrolls the framebuffer backbuffer downward by `pixels`.
+
+The newly exposed area at the top is filled with `color`.
+
+Example:
+
+    Before:
+
+        AAAA
+        BBBB
+        CCCC
+        DDDD
+
+    scroll_down(1):
+
+        ....
+        AAAA
+        BBBB
+        CCCC
+
+The operation only moves the backbuffer. The hardware
+framebuffer is updated later by present().
+*/
+
+pub fn scroll_down(
+    pixels: usize,
+    color: Color,
+) {
+    let info = info();
+
+    if pixels == 0 {
+        return;
+    }
+
+    if pixels >= info.height {
+        clear(color);
+        return;
+    }
+
+    /*
+     * Move the existing screen downward.
+
+         source:      0 .. height - pixels
+         destination: pixels .. height
+
+     * copy_rect() handles the overlapping regions correctly.
+     */
+
+    copy_rect(
+        0,
+        0,
+        0,
+        pixels,
+        info.width,
+        info.height - pixels,
+    );
+
+    /*
+     * Clear the newly exposed top region.
+     */
+
+    draw_rect(
+        0,
+        0,
         info.width,
         pixels,
         color,
@@ -518,7 +656,25 @@ For a single terminal character this is approximately:
 
     8 × 16 × 4 = 512 bytes
 
-instead of copying the entire 1920×1080 framebuffer.
+Scrolling marks the affected screen area dirty, so the next
+present() transfers the changed portion to the hardware
+framebuffer.
+
+Important:
+
+    present() should normally NOT be called from the keyboard
+    interrupt handler.
+
+Instead:
+
+    keyboard IRQ
+        -> modify backbuffer
+        -> return
+
+    kernel/main loop
+        -> fb::present()
+
+This keeps expensive framebuffer writes out of IRQ context.
 */
 
 pub fn present() {
@@ -592,6 +748,7 @@ pub fn present() {
 // Full Present
 // ============================================================
 
+#[allow(unused)]
 pub fn present_full() {
     let info = info();
 
@@ -619,6 +776,7 @@ pub fn height() -> usize {
     info().height
 }
 
+#[allow(unused)]
 #[inline]
 pub fn pitch() -> usize {
     info().front_pitch
@@ -674,6 +832,7 @@ mod tests {
             == super::color_to_u32(color)
     }
 
+    #[allow(unused)]
     fn fill_test_pattern(
         width: usize,
         height: usize,
@@ -689,13 +848,6 @@ mod tests {
 
             for y in 0..height {
                 for x in 0..width {
-                    /*
-                     * Each pixel gets a unique-ish value.
-
-                     This makes copy/scroll bugs much easier
-                     to detect than using a single color.
-                     */
-
                     let value =
                         ((y as u32) << 16)
                         | ((x as u32) & 0xffff);
@@ -845,11 +997,6 @@ mod tests {
 
         let info = info();
 
-        /*
-         * Checking every pixel makes this a genuinely useful
-         * test rather than only checking the corners.
-         */
-
         for y in 0..info.height {
             for x in 0..info.width {
                 if !pixel_is(
@@ -874,11 +1021,6 @@ mod tests {
         clear(Color::BLACK);
 
         let info = info();
-
-        /*
-         * Check a representative set of pixels rather than
-         * redundantly checking every pixel again.
-         */
 
         let points = [
             (0, 0),
@@ -1186,10 +1328,6 @@ mod tests {
     {
         clear(Color::BLACK);
 
-        /*
-         * Create a small known pattern.
-         */
-
         put_pixel(
             10,
             10,
@@ -1267,7 +1405,7 @@ mod tests {
     }
 
     #[test]
-    fn framebuffer_copy_rect_handles_overlap()
+    fn framebuffer_copy_rect_handles_horizontal_overlap()
         -> TestResult
     {
         clear(Color::BLACK);
@@ -1289,14 +1427,6 @@ mod tests {
             10,
             Color::BLUE,
         );
-
-        /*
-         * Shift the row one pixel right.
-
-             R G B
-              ↓
-             R R G B
-         */
 
         copy_rect(
             10,
@@ -1341,7 +1471,7 @@ mod tests {
     }
 
     // --------------------------------------------------------
-    // Scroll
+    // Scroll up
     // --------------------------------------------------------
 
     #[test]
@@ -1349,15 +1479,6 @@ mod tests {
         -> TestResult
     {
         clear(Color::BLACK);
-
-        /*
-         * Make four horizontal color bands.
-
-             RED
-             GREEN
-             BLUE
-             WHITE
-         */
 
         draw_rect(
             0,
@@ -1395,15 +1516,6 @@ mod tests {
             10,
             Color::BLACK,
         );
-
-        /*
-         * After scrolling:
-
-             GREEN
-             BLUE
-             WHITE
-             BLACK
-         */
 
         if !pixel_is(
             0,
@@ -1448,15 +1560,123 @@ mod tests {
         pass()
     }
 
+    // --------------------------------------------------------
+    // Scroll down
+    // --------------------------------------------------------
+
     #[test]
-    fn framebuffer_full_scroll_clears_screen()
+    fn framebuffer_scroll_down_moves_pixels_down()
+        -> TestResult
+    {
+        clear(Color::BLACK);
+
+        /*
+         * Four horizontal bands:
+
+             RED
+             GREEN
+             BLUE
+             WHITE
+         */
+
+        draw_rect(
+            0,
+            0,
+            10,
+            10,
+            Color::RED,
+        );
+
+        draw_rect(
+            0,
+            10,
+            10,
+            10,
+            Color::GREEN,
+        );
+
+        draw_rect(
+            0,
+            20,
+            10,
+            10,
+            Color::BLUE,
+        );
+
+        draw_rect(
+            0,
+            30,
+            10,
+            10,
+            Color::WHITE,
+        );
+
+        scroll_down(
+            10,
+            Color::BLACK,
+        );
+
+        /*
+         * Expected:
+
+             BLACK
+             RED
+             GREEN
+             BLUE
+         */
+
+        if !pixel_is(
+            0,
+            0,
+            Color::BLACK,
+        ) {
+            return TestResult::Fail(
+                "scroll_down did not clear exposed top area",
+            );
+        }
+
+        if !pixel_is(
+            0,
+            10,
+            Color::RED,
+        ) {
+            return TestResult::Fail(
+                "scroll_down did not move first row downward",
+            );
+        }
+
+        if !pixel_is(
+            0,
+            20,
+            Color::GREEN,
+        ) {
+            return TestResult::Fail(
+                "scroll_down did not move second row downward",
+            );
+        }
+
+        if !pixel_is(
+            0,
+            30,
+            Color::BLUE,
+        ) {
+            return TestResult::Fail(
+                "scroll_down did not move third row downward",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn framebuffer_scroll_down_handles_large_scroll()
         -> TestResult
     {
         clear(Color::RED);
 
         let info = info();
 
-        scroll_up(
+        scroll_down(
             info.height,
             Color::BLACK,
         );
@@ -1467,7 +1687,7 @@ mod tests {
             Color::BLACK,
         ) {
             return TestResult::Fail(
-                "full scroll did not clear screen",
+                "full downward scroll did not clear screen",
             );
         }
 
@@ -1477,7 +1697,7 @@ mod tests {
             Color::BLACK,
         ) {
             return TestResult::Fail(
-                "full scroll left pixels behind",
+                "full downward scroll left pixels behind",
             );
         }
 
@@ -1485,12 +1705,12 @@ mod tests {
     }
 
     #[test]
-    fn framebuffer_scroll_by_zero_does_nothing()
+    fn framebuffer_scroll_down_by_zero_does_nothing()
         -> TestResult
     {
         clear(Color::RED);
 
-        scroll_up(
+        scroll_down(
             0,
             Color::BLACK,
         );
@@ -1501,7 +1721,96 @@ mod tests {
             Color::RED,
         ) {
             return TestResult::Fail(
-                "zero-pixel scroll modified framebuffer",
+                "zero-pixel downward scroll modified framebuffer",
+            );
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn framebuffer_scroll_up_then_down_restores_original_area()
+        -> TestResult
+    {
+        clear(Color::BLACK);
+
+        draw_rect(
+            0,
+            0,
+            10,
+            10,
+            Color::RED,
+        );
+
+        draw_rect(
+            0,
+            10,
+            10,
+            10,
+            Color::GREEN,
+        );
+
+        draw_rect(
+            0,
+            20,
+            10,
+            10,
+            Color::BLUE,
+        );
+
+        /*
+         * Scroll upward by one row.
+
+             GREEN
+             BLUE
+             BLACK
+         */
+
+        scroll_up(
+            10,
+            Color::BLACK,
+        );
+
+        /*
+         * Scroll downward by one row.
+
+             BLACK
+             GREEN
+             BLUE
+         */
+
+        scroll_down(
+            10,
+            Color::BLACK,
+        );
+
+        if !pixel_is(
+            0,
+            0,
+            Color::BLACK,
+        ) {
+            return TestResult::Fail(
+                "round-trip scroll did not clear top area",
+            );
+        }
+
+        if !pixel_is(
+            0,
+            10,
+            Color::GREEN,
+        ) {
+            return TestResult::Fail(
+                "round-trip scroll lost middle row",
+            );
+        }
+
+        if !pixel_is(
+            0,
+            20,
+            Color::BLUE,
+        ) {
+            return TestResult::Fail(
+                "round-trip scroll lost bottom row",
             );
         }
 
@@ -1550,6 +1859,110 @@ mod tests {
             if !DIRTY {
                 return TestResult::Fail(
                     "draw_rect did not mark framebuffer dirty",
+                );
+            }
+
+            DIRTY = false;
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn framebuffer_scroll_down_marks_entire_affected_area_dirty()
+        -> TestResult
+    {
+        clear(Color::BLACK);
+
+        unsafe {
+            DIRTY = false;
+        }
+
+        scroll_down(
+            10,
+            Color::WHITE,
+        );
+
+        unsafe {
+            if !DIRTY {
+                return TestResult::Fail(
+                    "scroll_down did not mark framebuffer dirty",
+                );
+            }
+
+            if DIRTY_MIN_X != 0 {
+                return TestResult::Fail(
+                    "scroll_down dirty minimum X is incorrect",
+                );
+            }
+
+            if DIRTY_MIN_Y != 0 {
+                return TestResult::Fail(
+                    "scroll_down dirty minimum Y is incorrect",
+                );
+            }
+
+            if DIRTY_MAX_X != info().width {
+                return TestResult::Fail(
+                    "scroll_down dirty maximum X is incorrect",
+                );
+            }
+
+            if DIRTY_MAX_Y != info().height {
+                return TestResult::Fail(
+                    "scroll_down dirty maximum Y is incorrect",
+                );
+            }
+
+            DIRTY = false;
+        }
+
+        pass()
+    }
+
+    #[test]
+    fn framebuffer_scroll_up_marks_entire_affected_area_dirty()
+        -> TestResult
+    {
+        clear(Color::BLACK);
+
+        unsafe {
+            DIRTY = false;
+        }
+
+        scroll_up(
+            10,
+            Color::WHITE,
+        );
+
+        unsafe {
+            if !DIRTY {
+                return TestResult::Fail(
+                    "scroll_up did not mark framebuffer dirty",
+                );
+            }
+
+            if DIRTY_MIN_X != 0 {
+                return TestResult::Fail(
+                    "scroll_up dirty minimum X is incorrect",
+                );
+            }
+
+            if DIRTY_MIN_Y != 0 {
+                return TestResult::Fail(
+                    "scroll_up dirty minimum Y is incorrect",
+                );
+            }
+
+            if DIRTY_MAX_X != info().width {
+                return TestResult::Fail(
+                    "scroll_up dirty maximum X is incorrect",
+                );
+            }
+
+            if DIRTY_MAX_Y != info().height {
+                return TestResult::Fail(
+                    "scroll_up dirty maximum Y is incorrect",
                 );
             }
 
