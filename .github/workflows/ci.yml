@@ -1,96 +1,48 @@
-name: Oxenna CI
-
-on:
-  push:
-  pull_request:
-
-jobs:
+steps:
   build:
-    name: Build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get install \
-            xorriso nasm
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          targets: x86_64-unknown-none
-          components: rustfmt, rust-src
-
-      - name: Build OS
-        run: make
+    image: rust:nightly-bookworm
+    commands:
+      - apt-get update
+      - apt-get install -y make xorriso nasm
+      - rustup target add x86_64-unknown-none
+      - rustup component add rustfmt rust-src
+      - make
 
   test:
-    name: Kernel tests
-    runs-on: ubuntu-latest
+    image: rust:nightly-bookworm
+    commands:
+      - apt-get update
+      - apt-get install -y make xorriso nasm qemu-system-x86
+      - rustup target add x86_64-unknown-none
+      - rustup component add rust-src
+      - make test-iso
+      - |
+        set +e
+        qemu-system-x86_64 \
+          -cdrom oxenna_tests.iso \
+          -m 256M \
+          -serial stdio \
+          -display none \
+          -device isa-debug-exit,iobase=0xf4,iosize=0x04
+        status=$?
+        set -e
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+        if [ "$status" -eq 33 ]; then
+          exit 0
+        fi
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get install \
-            xorriso \
-            nasm \
-            qemu-system-x86
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          targets: x86_64-unknown-none
-          components: rust-src
-
-      - name: Run kernel tests
-        run: |
-          set +e
-          make test-iso
-          qemu-system-x86_64 -cdrom oxenna_tests.iso -m 256M \
-            -serial stdio \
-            -display none \
-            -device isa-debug-exit,iobase=0xf4,iosize=0x04; \
-            status=$?
-            set -e
-            if [ "$status" -eq 33 ]; then
-              exit 0
-            fi
-            exit "$status"
+        exit "$status"
 
   release:
-    name: Release ISO
-    needs:
+    image: woodpeckerci/plugin-release
+    depends_on:
       - build
       - test
-    if: github.event_name == 'push' && github.ref_type == 'tag'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get install \
-            xorriso nasm
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          targets: x86_64-unknown-none
-          components: rust-src
-
-      - name: Build ISO
-        run: make
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: sillos.iso
-          generate_release_notes: true
+    settings:
+      files:
+        - sillos.iso
+      api-key:
+        from_secret: codeberg_token
+      tag: ${CI_COMMIT_TAG}
+    when:
+      - event: tag
