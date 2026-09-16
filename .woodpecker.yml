@@ -32,17 +32,3 @@ steps:
         fi
 
         exit "$status"
-
-  release:
-    image: woodpeckerci/plugin-release
-    depends_on:
-      - build
-      - test
-    settings:
-      files:
-        - oxenna.iso
-      api-key:
-        from_secret: codeberg_token
-      tag: ${CI_COMMIT_TAG}
-    when:
-      - event: tag
