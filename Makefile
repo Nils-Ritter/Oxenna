@@ -1,4 +1,3 @@
-
 SHELL := /bin/bash
 
 # ============================================================
@@ -68,6 +67,7 @@ define UI_START
 	@rm -f "$(UI_ACTIVE)" "$(UI_PID)"
 	@touch "$(UI_ACTIVE)"
 	@printf '%s|%s|%s\n' "$(1)" "$(2)" "$(3)" > "$(UI_STATE)"
+    @chmod +x $(UI)
 	@$(UI) start "$(1)" "$(2)" "$(3)" &
 	@echo $$! > "$(UI_PID)"
 	@sleep 0.12
