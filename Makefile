@@ -131,6 +131,7 @@ endef
 
 .PHONY: ui-start
 ui-start:
+	@chmod +x $(UI)
 	@mkdir -p "$(UI_DIR)"
 	@rm -f "$(UI_ACTIVE)" "$(UI_PID)"
 	@touch "$(UI_ACTIVE)"
@@ -138,7 +139,6 @@ ui-start:
 	@$(UI) start 0 6 "Starting..." &
 	@echo $$! > "$(UI_PID)"
 	@sleep 0.12
-
 
 # ============================================================
 # UI stop target
@@ -172,6 +172,7 @@ ui-stop:
 # ============================================================
 
 all: ui-start $(ISO) $(TEST_ISO)
+	@chmod +x $(UI)
 	@$(call UI_STAGE,6,6,Build complete)
 	@sleep 0.25
 	@$(UI) stop >/dev/null 2>&1 || true
@@ -209,6 +210,7 @@ limine: $(LIMINE)
 # ============================================================
 
 kernel:
+	@chmod +x $(UI)
 	$(call UI_ENSURE)
 	$(call UI_STAGE,2,6,Building kernel)
 
@@ -222,6 +224,7 @@ kernel:
 # ============================================================
 
 kernel-tests:
+	@chmod +x $(UI)
 	$(call UI_ENSURE)
 	$(call UI_STAGE,4,6,Building test kernel)
 
@@ -257,6 +260,7 @@ $(USER_BIN): $(USER_SRC)
 # ============================================================
 
 $(ISO): kernel user $(LIMINE)
+	@chmod +x $(UI)
 	$(call UI_ENSURE)
 	$(call UI_STAGE,5,6,Building normal ISO)
 
@@ -319,6 +323,7 @@ iso: $(ISO)
 # ============================================================
 
 $(TEST_ISO): kernel-tests $(LIMINE)
+	@chmod +x $(UI)
 	$(call UI_ENSURE)
 	$(call UI_STAGE,6,6,Building test ISO)
 
