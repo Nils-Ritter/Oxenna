@@ -17,7 +17,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install \
-            xorriso nasm
+            xorriso nasm qemu-system-x86 qemu-img
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
@@ -42,7 +42,8 @@ jobs:
           sudo apt-get install \
             xorriso \
             nasm \
-            qemu-system-x86
+            qemu-system-x86 \
+            qemu-img
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
@@ -82,6 +83,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install \
             xorriso nasm
+            qemu-img
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
