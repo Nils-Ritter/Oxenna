@@ -6,7 +6,7 @@ use alloc::{string::String, vec::Vec};
 use spin::Mutex;
 
 use crate::drivers::ata::AtaDrive;
-use crate::fs::ext2::{Ext2, FileType, FsError, ROOT_INO, Stat};
+pub use crate::fs::ext2::{Ext2, FileType, FsError, ROOT_INO, Stat};
 
 pub use ext2::{DirEntry as Ext2DirEntry, FileType as Ext2FileType, FsUsage};
 

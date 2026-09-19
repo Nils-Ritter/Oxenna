@@ -26,6 +26,10 @@ mod drivers;
 mod trivial_assert_test;
 
 #[cfg(feature = "test")]
+#[path = "../tests/filesystem.rs"]
+mod filesystem_test;
+
+#[cfg(feature = "test")]
 #[path = "../tests/userspace.rs"]
 mod userspace_test;
 
