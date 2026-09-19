@@ -19,6 +19,7 @@ mod user;
 mod pic;
 mod console;
 mod shell;
+mod drivers;
 
 #[cfg(feature = "test")]
 #[path = "../tests/trivial_assert.rs"]

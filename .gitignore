@@ -3,6 +3,7 @@
 /iso_root
 /limine
 /userbin
+/out
 oxenna.iso
 oxenna_tests.iso
 user.bin

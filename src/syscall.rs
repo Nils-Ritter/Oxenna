@@ -4,9 +4,9 @@ use core::arch::global_asm;
 ///
 /// These numbers are part of the userspace ABI. Once userspace
 /// programs depend on them, don't casually renumber them.
-pub const SYS_EXIT: u64 = 0;
 pub const SYS_WRITE: u64 = 1;
 pub const SYS_YIELD: u64 = 2;
+pub const SYS_EXIT: u64 = 60;
 
 /// Standard output.
 pub const STDOUT: u64 = 1;

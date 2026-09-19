@@ -1,10 +1,27 @@
 extern crate alloc;
-use core::alloc::Layout;
-use alloc::alloc::{alloc, dealloc};
 
-use crate::{acpi, console::{self, Console, with_console}, console_print, console_println, console_println_color, fb::{self, Color}, fs::{Entry, FS}, kmem::{self, FRAME_ALLOCATOR}, test::exit_qemu};
+use core::alloc::Layout;
+use alloc::{alloc::alloc, alloc::dealloc, string::String};
+use spin::Mutex;
+
+use crate::{
+    acpi,
+    console::{self, Console, with_console},
+    console_print, console_println, console_println_color,
+    fb::{self, Color},
+    fs::{Entry, FS},
+    kmem::{self, FRAME_ALLOCATOR},
+    test::exit_qemu,
+};
 use crate::test::TestResult;
 use crate::test::test;
+
+/// Shell working directory, stored as a normalized absolute path.
+///
+/// The ext2 wrapper currently resolves paths from ROOT_INO, so the shell
+/// resolves relative paths here before passing them to the filesystem.
+static CURRENT_DIR: Mutex<String> = Mutex::new(String::new());
+
 
 pub fn execute(line: &str) {
     let mut parts = line.split_whitespace();
@@ -21,7 +38,7 @@ pub fn execute(line: &str) {
         "info" => info(),
         "panic" => panic(),
         "bp" => bp(),
-        "sven" => sven(), //NOTE: Do not add this to help
+        "sven" => sven(), // NOTE: Do not add this to help
         "reboot" => reboot(),
         "shutdown" => shutdown(),
         "exit" => shutdown(),
@@ -31,9 +48,20 @@ pub fn execute(line: &str) {
         "tg-serial" => toggle_serial(),
         "alloc!" => alloc_cmd(parts),
         "dealloc!" => dealloc_cmd(parts),
+
+        // Filesystem commands.
         "ls" => ls(parts),
+        "cd" => cd(parts),
+        "pwd" => pwd(),
         "mkdir" => mkdir(parts),
         "touch" => touch(parts),
+        "rm" => rm(parts),
+        "rmdir" => rmdir(parts),
+        "mv" => mv(parts),
+        "cat" => cat(parts),
+        "write" => write_file(parts),
+        "stat" => stat(parts),
+
         _ => {
             console_println!("Unknown command: {}", command);
             console_println!("Type 'help' for a list of commands.");
@@ -54,35 +82,125 @@ fn help() {
     console_println!("  exit       - Shuts the computer down.");
     console_println!("  setbg      - Sets the background color.");
     console_println!("  setfg      - Sets the foreground color.");
-    console_println!("  tg-serial  - Toggles priting kTerm output to serial.");
+    console_println!("  tg-serial  - Toggles printing kTerm output to serial.");
     console_println!("  alloc!     - Allocate N bytes, prints a pointer");
     console_println!("  dealloc!   - Free a pointer previously returned by alloc");
-    console_println!("  ls         - List directory contents");
-    console_println!("  mkdir      - Create a directory");
-    console_println!("  touch      - Create an empty file");
+    console_println!();
+    console_println!("Filesystem:");
+    console_println!("  ls [path]          - List directory contents");
+    console_println!("  cd [path]          - Change directory");
+    console_println!("  pwd                - Print working directory");
+    console_println!("  mkdir <path>       - Create a directory");
+    console_println!("  touch <path>       - Create an empty file");
+    console_println!("  rm <path>          - Remove a file");
+    console_println!("  rmdir <path>       - Remove an empty directory");
+    console_println!("  mv <old> <new>     - Rename/move a file or directory");
+    console_println!("  cat <path>         - Print a file");
+    console_println!("  write <path> <txt> - Replace a file with text");
+    console_println!("  stat <path>        - Show file metadata");
+}
+
+fn fs_error(command: &str, path: &str, err: impl core::fmt::Debug) {
+    console_println!("{}: '{}': {:?}", command, path, err);
+}
+
+/// Remove the last component from an absolute path.
+fn pop_path_component(path: &mut String) {
+    if path == "/" {
+        return;
+    }
+
+    if let Some(pos) = path.rfind('/') {
+        if pos == 0 {
+            path.truncate(1);
+        } else {
+            path.truncate(pos);
+        }
+    }
+}
+
+/// Resolve a shell path against the current working directory.
+///
+/// The filesystem wrapper currently exposes root-based path operations, so
+/// this function turns every shell path into a normalized absolute path.
+fn absolute_path(path: &str) -> String {
+    if path.is_empty() {
+        return CURRENT_DIR.lock().clone();
+    }
+
+    let mut result = if path.starts_with('/') {
+        String::from("/")
+    } else {
+        CURRENT_DIR.lock().clone()
+    };
+
+    for component in path.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => pop_path_component(&mut result),
+            name => {
+                if result != "/" {
+                    result.push('/');
+                }
+                result.push_str(name);
+            }
+        }
+    }
+
+    if result.is_empty() {
+        String::from("/")
+    } else {
+        result
+    }
+}
+
+fn pwd() {
+    let cwd = CURRENT_DIR.lock();
+    if cwd.is_empty() {
+        console_println!("/");
+    } else {
+        console_println!("{}", &*cwd);
+    }
+}
+
+fn cd(mut args: core::str::SplitWhitespace<'_>) {
+    let path = args.next().unwrap_or("/");
+
+    if args.next().is_some() {
+        console_println!("cd: too many arguments");
+        return;
+    }
+
+    let target = absolute_path(path);
+
+    // list_entries only succeeds when the target resolves to a directory.
+    match FS.lock().list_entries(&target) {
+        Ok(_) => {
+            *CURRENT_DIR.lock() = target;
+        }
+        Err(e) => fs_error("cd", path, e),
+    }
 }
 
 fn ls(mut args: core::str::SplitWhitespace<'_>) {
-    let path = args.next().unwrap_or("/");
+    let path = absolute_path(args.next().unwrap_or("."));
 
-    let entries = FS.lock().list_entries(path);
-
-    match entries {
+    match FS.lock().list_entries(&path) {
         Ok(mut entries) => {
-            if entries.is_empty() {
-                return;
-            }
-
             entries.sort_by(|a, b| name_of(a).cmp(name_of(b)));
 
             for entry in entries {
                 match entry {
-                    Entry::Dir(name) => console_println_color!(Color::BLUE, "{}/", name),
-                    Entry::File(name) => console_println!("{}", name),
+                    Entry::Dir(name) => {
+                        console_println_color!(Color::BLUE, "{}/", name);
+                    }
+                    Entry::File(name) => {
+                        console_println!("{}", name);
+                    }
                 }
             }
         }
-        Err(_) => console_println!("ls: cannot access '{}': No such directory", path),
+        Err(e) => fs_error("ls", &path, e),
     }
 }
 
@@ -98,9 +216,11 @@ fn mkdir(mut args: core::str::SplitWhitespace<'_>) {
         return;
     };
 
-    match FS.lock().mkdir(path) {
+    let path = absolute_path(path);
+
+    match FS.lock().mkdir(&path) {
         Ok(()) => {}
-        Err(_) => console_println!("mkdir: cannot create directory '{}': already exists or parent missing", path),
+        Err(e) => fs_error("mkdir", &path, e),
     }
 }
 
@@ -110,9 +230,131 @@ fn touch(mut args: core::str::SplitWhitespace<'_>) {
         return;
     };
 
-    match FS.lock().touch(path) {
+    let path = absolute_path(path);
+
+    match FS.lock().touch(&path) {
         Ok(()) => {}
-        Err(_) => console_println!("touch: cannot create '{}': is a directory or parent missing", path),
+        Err(e) => fs_error("touch", &path, e),
+    }
+}
+
+fn rm(mut args: core::str::SplitWhitespace<'_>) {
+    let Some(path) = args.next() else {
+        console_println!("Usage: rm <path>");
+        return;
+    };
+
+    let path = absolute_path(path);
+
+    match FS.lock().remove(&path) {
+        Ok(()) => {}
+        Err(e) => fs_error("rm", &path, e),
+    }
+}
+
+fn rmdir(mut args: core::str::SplitWhitespace<'_>) {
+    let Some(path) = args.next() else {
+        console_println!("Usage: rmdir <path>");
+        return;
+    };
+
+    let path = absolute_path(path);
+
+    match FS.lock().rmdir(&path) {
+        Ok(()) => {}
+        Err(e) => fs_error("rmdir", &path, e),
+    }
+}
+
+fn mv(mut args: core::str::SplitWhitespace<'_>) {
+    let Some(old) = args.next() else {
+        console_println!("Usage: mv <old> <new>");
+        return;
+    };
+
+    let Some(new) = args.next() else {
+        console_println!("Usage: mv <old> <new>");
+        return;
+    };
+
+    let old_abs = absolute_path(old);
+    let new_abs = absolute_path(new);
+
+    match FS.lock().rename(&old_abs, &new_abs) {
+        Ok(()) => {}
+        Err(e) => {
+            console_println!("mv: '{}' -> '{}': {:?}", old, new, e);
+        }
+    }
+}
+
+fn cat(mut args: core::str::SplitWhitespace<'_>) {
+    let Some(path) = args.next() else {
+        console_println!("Usage: cat <path>");
+        return;
+    };
+
+    let path_abs = absolute_path(path);
+
+    match FS.lock().read_file(&path_abs) {
+        Ok(data) => {
+            match core::str::from_utf8(&data) {
+                Ok(text) => console_print!("{}", text),
+                Err(_) => {
+                    console_println!("cat: '{}': binary file", path);
+                }
+            }
+        }
+        Err(e) => fs_error("cat", &path_abs, e),
+    }
+}
+
+fn write_file(mut args: core::str::SplitWhitespace<'_>) {
+    let Some(path) = args.next() else {
+        console_println!("Usage: write <path> <text...>");
+        return;
+    };
+
+    let path_abs = absolute_path(path);
+
+    let mut data = alloc::vec::Vec::new();
+    let mut first = true;
+
+    for arg in args {
+        if !first {
+            data.push(b' ');
+        }
+
+        data.extend_from_slice(arg.as_bytes());
+        first = false;
+    }
+
+    match FS.lock().write_file(&path_abs, &data) {
+        Ok(()) => {}
+        Err(e) => fs_error("write", &path_abs, e),
+    }
+}
+
+fn stat(mut args: core::str::SplitWhitespace<'_>) {
+    let Some(path) = args.next() else {
+        console_println!("Usage: stat <path>");
+        return;
+    };
+
+    let path_abs = absolute_path(path);
+
+    match FS.lock().stat(&path_abs) {
+        Ok(stat) => {
+            console_println!("Path:   {}", path);
+            console_println!("Type:   {:?}", stat.file_type);
+            console_println!("Size:   {} bytes", stat.size);
+            console_println!("Inode:  {}", stat.ino);
+            console_println!("Links:  {}", stat.links);
+            console_println!("Mode:   {:o}", stat.mode & 0o7777);
+            console_println!("UID:    {}", stat.uid);
+            console_println!("GID:    {}", stat.gid);
+        }
+        Err(e) => fs_error("stat", &path_abs, e),
     }
 }
 
@@ -458,3 +700,5 @@ color_test!(
     Color::WHITE,
     "set white failed"
 );
+
+
