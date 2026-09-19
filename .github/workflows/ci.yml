@@ -58,6 +58,7 @@ jobs:
           qemu-system-x86_64 -cdrom out/oxenna_tests.iso -m 256M \
             -serial stdio \
             -display none \
+            -drive file=out/disk.img,format=raw,if=ide \
             -device isa-debug-exit,iobase=0xf4,iosize=0x04; \
             status=$?
             set -e
