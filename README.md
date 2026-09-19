@@ -49,7 +49,7 @@ sudo apt install qemu-system-x86 qemu-utils
 Clone the repository:
 
 ```sh
-git clone https://github.com/Nils-Ritter/Oxenna.git
+git clone https://codeberg.org/Nils-Ritter/Oxenna.git
 cd Oxenna
 ```
 
@@ -125,14 +125,10 @@ some standard Rust tooling and libraries are not available inside the kernel.
 
 ## Roadmap
 
-- [x] Improve serial logging
-- [x] Add interrupt handling
-- [x] Add memory management
-- [x] Add a keyboard driver
-- [x] Add a basic shell
-- [x] Add a simple heap allocator
+- [ ] Implement a disk driver
 - [ ] Improve automated testing
 - [ ] Support additional hardware
+- [ ] Write a basic scheduler
 
 ## License
 
