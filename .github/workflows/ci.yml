@@ -1,0 +1,96 @@
+name: Oxenna CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install \
+            xorriso nasm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-none
+          components: rustfmt, rust-src
+
+      - name: Build OS
+        run: make
+
+  test:
+    name: Kernel tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install \
+            xorriso \
+            nasm \
+            qemu-system-x86
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-none
+          components: rust-src
+
+      - name: Run kernel tests
+        run: |
+          set +e
+          make test-iso
+          qemu-system-x86_64 -cdrom oxenna_tests.iso -m 256M \
+            -serial stdio \
+            -display none \
+            -device isa-debug-exit,iobase=0xf4,iosize=0x04; \
+            status=$?
+            set -e
+            if [ "$status" -eq 33 ]; then
+              exit 0
+            fi
+            exit "$status"
+
+  release:
+    name: Release ISO
+    needs:
+      - build
+      - test
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install \
+            xorriso nasm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-none
+          components: rust-src
+
+      - name: Build ISO
+        run: make
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: sillos.iso
+          generate_release_notes: true
