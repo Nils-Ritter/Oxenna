@@ -54,7 +54,7 @@ jobs:
       - name: Run kernel tests
         run: |
           set +e
-          make test-iso
+          make
           qemu-system-x86_64 -cdrom out/oxenna_tests.iso -m 256M \
             -serial stdio \
             -display none \
