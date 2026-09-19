@@ -38,7 +38,7 @@ LIMINE := $(LIMINE_DIR)/limine
 LIMINE_REPO := https://github.com/limine-bootloader/limine.git
 LIMINE_BRANCH := v9.x-binary
 
-USER_SRC := user/user.oxs
+USER_SRC := user/user.asm
 USER_BIN := userbin/user.bin
 
 # ============================================================
