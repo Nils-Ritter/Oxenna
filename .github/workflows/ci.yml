@@ -15,6 +15,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo apt-get update
           sudo apt-get install \
             xorriso nasm
 
@@ -37,6 +38,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo apt-get update
           sudo apt-get install \
             xorriso \
             nasm \
@@ -77,6 +79,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo apt-get update
           sudo apt-get install \
             xorriso nasm
 
