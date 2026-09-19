@@ -49,7 +49,7 @@ sudo apt install qemu-system-x86 qemu-utils
 Clone the repository:
 
 ```sh
-git clone https://codeberg.org/Nils-Ritter/Oxenna.git
+git clone https://github.org/Nils-Ritter/Oxenna.git
 cd Oxenna
 ```
 
