@@ -1,0 +1,35 @@
+mainmenu "Oxenna Kernel Configuration"
+
+menu "General setup"
+config RELEASE_BUILD
+    bool "Build an optimized release kernel"
+    default n
+
+config USERSPACE
+    bool "Include userspace loader"
+    default y
+
+config SHELL
+    bool "Include interactive kernel shell"
+    default y
+    depends on FS_EXT2
+
+endmenu
+
+menu "Drivers"
+config DRIVER_BLOCK
+    bool "Block device framework"
+    default y
+
+config DRIVER_ATA
+    bool "ATA PIO disk driver"
+    default y
+    depends on DRIVER_BLOCK
+endmenu
+
+menu "Filesystems"
+config FS_EXT2
+    bool "ext2 filesystem"
+    default y
+    depends on DRIVER_BLOCK && DRIVER_ATA
+endmenu

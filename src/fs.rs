@@ -1,3 +1,4 @@
+#[cfg(feature = "fs_ext2")]
 pub mod ext2;
 
 extern crate alloc;
@@ -5,6 +6,7 @@ extern crate alloc;
 use alloc::{string::String, vec::Vec};
 use spin::Mutex;
 
+#[cfg(feature = "fs_ext2")]
 use crate::drivers::ata::AtaDrive;
 pub use crate::fs::ext2::{Ext2, FileType, FsError, ROOT_INO, Stat};
 

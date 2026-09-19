@@ -7,6 +7,7 @@ extern crate alloc;
 
 mod fb;
 pub mod syscall;
+#[cfg(feature = "fs_ext2")]
 mod fs;
 mod acpi;
 mod font;
@@ -15,9 +16,11 @@ mod test;
 mod kmem;
 pub mod int;
 pub mod gdt;
+#[cfg(feature = "userspace")]
 mod user;
 mod pic;
 mod console;
+#[cfg(feature = "shell")]
 mod shell;
 mod drivers;
 
@@ -47,7 +50,6 @@ mod unit_tests;
 
 use core::panic::PanicInfo;
 
-pub const DEBUG_TOGGLE: bool = true;
 pub static mut TESTING: bool = false;
 
 use limine::{RequestsEndMarker, RequestsStartMarker, request::RsdpRequest};
@@ -154,9 +156,19 @@ fn kernel() -> !{
     console_println_color!(Color::BLUE, "/    |    \\>    <\\  ___/|   |  \\   |  \\/ __ \\_");
     console_println_color!(Color::BLUE, "\\_______  /__/\\_ \\\\___  >___|  /___|  (____  /");
     console_println_color!(Color::BLUE, "        \\/      \\/    \\/     \\/     \\/     \\/");
+    #[cfg(feature = "shell")]
     console_print!("\nType any command to get started: ");
+    #[cfg(not(feature = "shell"))]
+    console_println!();
     fb::present();
-    user::run()
+
+    #[cfg(feature = "userspace")]
+    user::run();
+
+    #[cfg(not(feature = "userspace"))]
+    loop {
+        core::hint::spin_loop();
+    }
 }
 
 use core::arch::asm;

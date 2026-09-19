@@ -24,5 +24,14 @@ panic = "abort"
 panic = "abort"
 
 [features]
+# Features are selected by Kconfig via `make menuconfig`.  Keep the
+# dependency graph here as a second line of defence when the project is
+# built directly with Cargo.
 default = []
-test = []
+release_build = []
+userspace = []
+shell = ["fs_ext2"]
+test = ["fs_ext2"]
+driver_block = []
+driver_ata = ["driver_block"]
+fs_ext2 = ["driver_block", "driver_ata"]

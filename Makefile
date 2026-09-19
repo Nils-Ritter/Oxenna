@@ -30,7 +30,10 @@ OUT := out
 CARGO_TARGET_DIR := $(OUT)/target
 TEST_TARGET_DIR  := $(OUT)/target-test
 
-KERNEL := $(CARGO_TARGET_DIR)/$(KERNEL_TARGET)/debug/oxenna
+KERNEL_PROFILE := $(if $(filter y,$(CONFIG_RELEASE_BUILD)),release,debug)
+CARGO_PROFILE_ARGS := $(if $(filter y,$(CONFIG_RELEASE_BUILD)),--release,)
+
+KERNEL := $(CARGO_TARGET_DIR)/$(KERNEL_TARGET)/$(KERNEL_PROFILE)/oxenna
 TEST_KERNEL := $(TEST_TARGET_DIR)/$(KERNEL_TARGET)/debug/oxenna
 
 ISO := $(OUT)/oxenna.iso
@@ -38,6 +41,11 @@ TEST_ISO := $(OUT)/oxenna_tests.iso
 DISK := $(OUT)/disk.img
 
 ISO_ROOT := $(OUT)/iso_root
+
+CONFIG_MK := $(OUT)/config/config.mk
+KCONFIG := Kconfig
+KCONFIG_TOOL := scripts/kconfig.py
+-include $(CONFIG_MK)
 
 LIMINE_DIR := limine
 LIMINE := $(LIMINE_DIR)/limine
@@ -69,15 +77,31 @@ define success
 endef
 
 .PHONY: all clean cleaniso rebuild
+.PHONY: menuconfig olddefconfig config
 .PHONY: kernel kernel-tests user
 .PHONY: iso test-iso disk run test
 .PHONY: limine
 
 # ============================================================
+# Configuration
+# ============================================================
+
+config: $(CONFIG_MK)
+
+$(CONFIG_MK): $(KCONFIG) $(KCONFIG_TOOL)
+	@python3 $(KCONFIG_TOOL) olddefconfig
+
+menuconfig: $(KCONFIG) $(KCONFIG_TOOL)
+	@python3 $(KCONFIG_TOOL) menuconfig
+
+olddefconfig: $(KCONFIG) $(KCONFIG_TOOL)
+	@python3 $(KCONFIG_TOOL) olddefconfig
+
+# ============================================================
 # Default
 # ============================================================
 
-all: $(ISO) $(TEST_ISO) $(DISK)
+all: config $(ISO) $(TEST_ISO) $(DISK)
 	$(call success,Build complete!)
 
 # ============================================================
@@ -106,12 +130,12 @@ limine: $(LIMINE)
 # Normal kernel
 # ============================================================
 
-kernel:
+kernel: config
 	$(call banner,BUILDING KERNEL)
 
 	$(call step,Compiling kernel...)
 	@mkdir -p $(OUT)
-	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build $(CARGO_PROFILE_ARGS) $(CARGO_FEATURE_ARGS)
 
 	$(call success,Kernel: $(KERNEL))
 
@@ -119,13 +143,13 @@ kernel:
 # Test kernel
 # ============================================================
 
-kernel-tests:
+kernel-tests: config
 	$(call banner,BUILDING TEST KERNEL)
 
 	$(call step,Compiling kernel with test feature...)
 	@mkdir -p $(OUT)
 	@CARGO_TARGET_DIR=$(TEST_TARGET_DIR) \
-		cargo build --features test
+		cargo build --features "$(strip $(CARGO_FEATURES) test)"
 
 	$(call success,Test kernel: $(TEST_KERNEL))
 
@@ -166,7 +190,11 @@ $(DISK):
 # Normal ISO
 # ============================================================
 
+ifeq ($(CONFIG_USERSPACE),y)
 $(ISO): kernel user $(LIMINE)
+else
+$(ISO): kernel $(LIMINE)
+endif
 	$(call banner,BUILDING NORMAL ISO)
 
 	@rm -rf $(ISO_ROOT)
@@ -177,11 +205,16 @@ $(ISO): kernel user $(LIMINE)
 	$(call step,Copying kernel...)
 	@cp $(KERNEL) $(ISO_ROOT)/boot/oxenna
 
+ifeq ($(CONFIG_USERSPACE),y)
 	$(call step,Copying userspace...)
 	@cp $(USER_BIN) $(ISO_ROOT)/boot/user.bin
 
 	$(call step,Copying Limine configuration...)
 	@cp limine.conf $(ISO_ROOT)/limine.conf
+else
+	$(call step,Copying Limine configuration...)
+	@sed '/^[[:space:]]*module_path:/d' limine.conf > $(ISO_ROOT)/limine.conf
+endif
 
 	$(call step,Copying Limine boot files...)
 	@cp $(LIMINE_DIR)/limine-bios-cd.bin $(ISO_ROOT)/boot/

@@ -573,6 +573,7 @@ static INVALID_IDT: InvalidIdt = InvalidIdt {
 // ============================================================
 // Utility
 // ============================================================
+
 fn signature_to_str(signature: [u8; 4]) -> &'static str {
     match &signature {
         b"FACP" => "FACP",

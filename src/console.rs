@@ -10,8 +10,10 @@ use core::{
 use crate::{
     fb::{self, Color},
     font,
-    shell,
 };
+
+#[cfg(feature = "shell")]
+use crate::shell;
 
 use crate::test::{test, TestResult};
 
@@ -1069,6 +1071,7 @@ pub fn receive_key(
                     &command_buffer[..length],
                 )
             {
+                #[cfg(feature = "shell")]
                 shell::execute(command);
             }
 
