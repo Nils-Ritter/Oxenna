@@ -175,3 +175,54 @@ some standard Rust tooling and libraries are not available inside the kernel.
 ## License
 
 This project is licensed under the terms of the license included in this repository.
+
+## `.ox` userspace applications
+
+Oxxena applications are ordinary **x86-64 ELF64** executables. The `.ox`
+extension is only a naming convention; the loader checks the ELF header and
+program headers rather than the filename contents.
+
+The current loader supports static `ET_EXEC` and `ET_DYN` binaries with
+`PT_LOAD` segments. ELF interpreters (`PT_INTERP`) and dynamic loading are not
+implemented yet.
+
+A small direct-syscall example is included:
+
+```text
+apps/hello.S
+```
+
+Build it and put it on the ext2 disk image:
+
+```bash
+make apps
+make disk-apps
+make run
+```
+
+It will be installed as:
+
+```text
+/bin/hello.ox
+```
+
+Then from the Oxenna shell:
+
+```text
+run /bin/hello.ox
+```
+
+You can also install any externally-built ELF file:
+
+```bash
+make disk-install APP=hello.ox DEST=/bin/hello.ox
+```
+
+The syscall ABI uses Linux x86-64 syscall numbers for the implemented calls,
+including `read`, `write`, `open`, `close`, `stat`, `fstat`, `lseek`, `mmap`,
+`munmap`, `brk`, `getpid`, `uname`, `getdents64`, `clock_gettime`,
+`arch_prctl`, `futex`, `openat`, `newfstatat`, `exit`, and `exit_group`.
+
+The process model is intentionally small: one userspace process runs at a
+time, `exit` returns control to the shell, and the process's user mappings are
+reclaimed afterwards.

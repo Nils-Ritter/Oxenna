@@ -4,6 +4,9 @@ use core::alloc::Layout;
 use alloc::{alloc::alloc, alloc::dealloc, string::String};
 use spin::Mutex;
 
+#[cfg(feature = "userspace")]
+use crate::user;
+
 use crate::{
     acpi,
     console::{self, Console, with_console},
@@ -61,10 +64,15 @@ pub fn execute(line: &str) {
         "cat" => cat(parts),
         "write" => write_file(parts),
         "stat" => stat(parts),
+        #[cfg(feature = "userspace")]
+        "run" => run(parts),
 
         _ => {
-            console_println!("Unknown command: {}", command);
-            console_println!("Type 'help' for a list of commands.");
+            #[cfg(feature = "userspace")]
+            run_binapp(command, parts);
+
+            #[cfg(not(feature = "userspace"))]
+            console_println!("No command or binapp found for: {}", command);
         }
     }
 }
@@ -98,10 +106,73 @@ fn help() {
     console_println!("  cat <path>         - Print a file");
     console_println!("  write <path> <txt> - Replace a file with text");
     console_println!("  stat <path>        - Show file metadata");
+    #[cfg(feature = "userspace")]
+    console_println!("  run <app.ox> [arg] - Execute an ELF .ox program");
 }
 
 fn fs_error(command: &str, path: &str, err: impl core::fmt::Debug) {
     console_println!("{}: '{}': {:?}", command, path, err);
+}
+
+#[cfg(feature = "userspace")]
+fn run_binapp(command: &str, args: core::str::SplitWhitespace<'_>) {
+    let exact = alloc::format!("/bin/{}", command);
+    let with_ox = alloc::format!("/bin/{}.ox", command);
+
+    let path = {
+        let mut fs = FS.lock();
+
+        match fs.stat(&exact) {
+            Ok(stat) if matches!(stat.file_type, crate::fs::FileType::Regular) => exact,
+            _ => match fs.stat(&with_ox) {
+                Ok(stat) if matches!(stat.file_type, crate::fs::FileType::Regular) => with_ox,
+                _ => {
+                    console_println!("No command or binapp found for: {}", command);
+                    return;
+                }
+            },
+        }
+    };
+
+    let argv: alloc::vec::Vec<&str> = args.collect();
+
+    console_println!("Starting {}...", path);
+
+    match user::exec(&path, &argv) {
+        Ok(result) => {
+            console_println!("{} exited with status {}", path, result.status);
+        }
+        Err(e) => {
+            console_println!("run: '{}': {:?}", path, e);
+        }
+    }
+}
+
+#[cfg(feature = "userspace")]
+fn run(mut args: core::str::SplitWhitespace<'_>) {
+    let Some(program) = args.next() else {
+        console_println!("Usage: run <program.ox> [args...]");
+        return;
+    };
+
+    let path = absolute_path(program);
+    if !path.ends_with(".ox") {
+        console_println!("run: '{}' is not an Oxenna .ox executable", program);
+        return;
+    }
+
+    let argv: alloc::vec::Vec<&str> = args.collect();
+
+    console_println!("Starting {}...", path);
+
+    match user::exec(&path, &argv) {
+        Ok(result) => {
+            console_println!("{} exited with status {}", path, result.status);
+        }
+        Err(e) => {
+            console_println!("run: '{}': {:?}", path, e);
+        }
+    }
 }
 
 /// Remove the last component from an absolute path.

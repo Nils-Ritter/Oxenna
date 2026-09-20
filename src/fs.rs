@@ -155,6 +155,33 @@ impl FileSystem {
         self.read(path)
     }
 
+    /// Read from an open-file style offset without materializing the whole file.
+    pub fn read_at(&mut self, path: &str, offset: u64, buffer: &mut [u8]) -> Result<usize, FsError> {
+        let fs = self.fs()?;
+        let ino = fs.resolve(ROOT_INO, path, true)?;
+        fs.read(ino, offset, buffer)
+    }
+
+    /// Write at an open-file style offset.
+    pub fn write_at(&mut self, path: &str, offset: u64, data: &[u8]) -> Result<usize, FsError> {
+        let fs = self.fs()?;
+        let ino = fs.resolve(ROOT_INO, path, true)?;
+        fs.write(ino, offset, data)
+    }
+
+    /// Return directory entries including inode/type information for getdents.
+    pub fn readdir(&mut self, path: &str) -> Result<Vec<Ext2DirEntry>, FsError> {
+        let fs = self.fs()?;
+        let ino = fs.resolve(ROOT_INO, path, true)?;
+        fs.readdir(ino)
+    }
+
+    pub fn readlink(&mut self, path: &str) -> Result<Vec<u8>, FsError> {
+        let fs = self.fs()?;
+        let ino = fs.resolve(ROOT_INO, path, false)?;
+        fs.readlink(ino)
+    }
+
     pub fn write_file(&mut self, path: &str, data: &[u8]) -> Result<(), FsError> {
         self.write(path, data)
     }

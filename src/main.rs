@@ -6,6 +6,8 @@
 extern crate alloc;
 
 mod fb;
+#[cfg(feature = "userspace")]
+mod elf;
 pub mod syscall;
 #[cfg(feature = "fs_ext2")]
 mod fs;
@@ -162,10 +164,10 @@ fn kernel() -> !{
     console_println!();
     fb::present();
 
-    #[cfg(feature = "userspace")]
-    user::run();
+    #[cfg(all(feature = "userspace", not(feature = "shell")))]
+    user::run_init();
 
-    #[cfg(not(feature = "userspace"))]
+    #[cfg(any(not(feature = "userspace"), feature = "shell"))]
     loop {
         core::hint::spin_loop();
     }

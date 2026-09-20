@@ -1,19 +1,66 @@
 mainmenu "Oxenna Kernel Configuration"
 
 menu "General setup"
+config BUILD_KERNEL
+    bool "Build the kernel"
+    default y
+
+config BUILD_TESTS
+    bool "Build the kernel test image"
+    default n
+    depends on BUILD_KERNEL && FS_EXT2
+
 config RELEASE_BUILD
     bool "Build an optimized release kernel"
     default n
 
-config USERSPACE
-    bool "Include userspace loader"
+config DEBUG_INFO
+    bool "Keep debug information"
+    default y
+endmenu
+
+menu "Userspace / ELF"
+config ELF_SUPPORT
+    bool "Enable ELF userspace support"
     default y
 
+config ELF_ET_DYN
+    bool "Enable ET_DYN / PIE executables"
+    default y
+
+
+config ELF_ET_EXEC
+    bool "Enable ET_EXEC executables"
+    default y
+
+
+config USER_SYSCALLS
+    bool "Enable userspace system calls"
+    default y
+    depends on ELF_SUPPORT
+
 config SHELL
-    bool "Include interactive kernel shell"
+    bool "Build the interactive kernel shell"
     default y
     depends on FS_EXT2
 
+endmenu
+
+menu "Userspace applications"
+config APP_HELLO
+    bool "Build hello.ox"
+    default y
+    depends on ELF_SUPPORT && ELF_ET_DYN
+
+config APP_FASTFETCH
+    bool "Build fastfetch.ox"
+    default y
+    depends on ELF_SUPPORT && ELF_ET_DYN
+
+config INSTALL_APPS
+    bool "Install selected applications into /bin"
+    default y
+    depends on ELF_SUPPORT && FS_EXT2
 endmenu
 
 menu "Drivers"
@@ -29,7 +76,24 @@ endmenu
 
 menu "Filesystems"
 config FS_EXT2
-    bool "ext2 filesystem"
+    bool "Enable ext2 filesystem"
     default y
     depends on DRIVER_BLOCK && DRIVER_ATA
+
+config BUILD_DISK
+    bool "Build the ext2 disk image"
+    default y
+    depends on FS_EXT2
+endmenu
+
+menu "Images and build outputs"
+config BUILD_ISO
+    bool "Build the bootable ISO"
+    default y
+    depends on BUILD_KERNEL
+
+config BUILD_TEST_ISO
+    bool "Build the test ISO when tests are enabled"
+    default y
+    depends on BUILD_TESTS
 endmenu
