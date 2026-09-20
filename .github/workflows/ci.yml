@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   build:
     name: Build
@@ -16,17 +19,35 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install \
-            xorriso nasm
+          sudo apt-get install -y \
+            build-essential \
+            binutils \
+            e2fsprogs \
+            git \
+            qemu-system-x86 \
+            qemu-utils \
+            xorriso
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
         with:
           targets: x86_64-unknown-none
-          components: rustfmt, rust-src
+          components: rust-src, rustfmt
 
-      - name: Build OS
+      - name: Validate configuration
+        run: make olddefconfig
+
+      - name: Build Oxenna
         run: make
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: oxenna-build
+          path: |
+            out/oxenna.iso
+            disk.img
+          if-no-files-found: error
 
   test:
     name: Kernel tests
@@ -39,10 +60,14 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install \
-            xorriso \
-            nasm \
-            qemu-system-x86
+          sudo apt-get install -y \
+            build-essential \
+            binutils \
+            e2fsprogs \
+            git \
+            qemu-system-x86 \
+            qemu-utils \
+            xorriso
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@nightly
@@ -50,20 +75,20 @@ jobs:
           targets: x86_64-unknown-none
           components: rust-src
 
-      - name: Run kernel tests
+      - name: Enable kernel tests
         run: |
-          set +e
-          make test-iso
-          qemu-system-x86_64 -cdrom oxenna_tests.iso -m 256M \
-            -serial stdio \
-            -display none \
-            -device isa-debug-exit,iobase=0xf4,iosize=0x04; \
-            status=$?
-            set -e
-            if [ "$status" -eq 33 ]; then
-              exit 0
-            fi
-            exit "$status"
+          sed -i \
+            's/^# CONFIG_BUILD_TESTS is not set$/CONFIG_BUILD_TESTS=y/' \
+            .config
+
+          sed -i \
+            's/^# CONFIG_BUILD_TEST_ISO is not set$/CONFIG_BUILD_TEST_ISO=y/' \
+            .config
+
+          make olddefconfig
+
+      - name: Run kernel tests
+        run: make test-nogui
 
   release:
     name: Release ISO
@@ -71,29 +96,18 @@ jobs:
       - build
       - test
     if: github.event_name == 'push' && github.ref_type == 'tag'
+
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install \
-            xorriso nasm
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
         with:
-          targets: x86_64-unknown-none
-          components: rust-src
-
-      - name: Build ISO
-        run: make
+          name: oxenna-build
+          path: release
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: sillos.iso
+          files: release/oxenna.iso
           generate_release_notes: true

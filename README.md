@@ -61,6 +61,46 @@ make
 
 The finished ISOs are placed in the projects root directory.
 
+## Build configuration
+
+Oxenna uses a small Kconfig-compatible configuration layer inspired by the Linux kernel.
+The configuration is compile-time: selected components are passed to Cargo as features, so
+unselected drivers/filesystems are left out of the kernel binary entirely.
+
+Open the interactive configuration UI with:
+
+```sh
+make menuconfig
+```
+
+The UI supports keyboard navigation, Space to toggle options, and S to save. Dependencies
+are enforced automatically; for example, the ext2 filesystem requires both the block-device
+framework and the ATA driver. The resulting configuration is stored in `.config`, while
+`out/config/config.mk` is generated for the Makefile.
+
+Current configuration groups include:
+
+- **General setup** — optimized release builds, userspace loader, and the interactive shell.
+- **Drivers** — block-device framework and ATA PIO disk driver.
+- **Filesystems** — ext2.
+
+These are built-in kernel components rather than dynamically loadable modules. Adding a new
+driver or subsystem means adding a Kconfig symbol, a Cargo feature, and the corresponding
+`cfg(feature = "...")` gates in the Rust module tree.
+
+After changing the configuration, build normally with:
+
+```sh
+make
+```
+
+To regenerate the configuration without opening the UI (useful after adding new Kconfig
+symbols), run:
+
+```sh
+make olddefconfig
+```
+
 ## Running
 
 Run the operating system in QEMU:
@@ -102,8 +142,10 @@ console along with the normal kernel output.
 ├── README.md             # The file youre reading right now
 ├── limine.conf           # Limine bootloader config
 ├── linker.ld             # Linker config
-├── rust-toolchain        # Rust toolchain setting
-└── Makefile              # The makefile
+├── rust-toolchain.toml   # Rust toolchain setting
+├── Kconfig              # Kernel configuration symbols and dependencies
+├── scripts/kconfig.py   # Lightweight menuconfig implementation
+└── Makefile              # Build orchestration and menuconfig entry points
 ```
 
 ## Development
@@ -133,3 +175,54 @@ some standard Rust tooling and libraries are not available inside the kernel.
 ## License
 
 This project is licensed under the terms of the license included in this repository.
+
+## `.ox` userspace applications
+
+Oxxena applications are ordinary **x86-64 ELF64** executables. The `.ox`
+extension is only a naming convention; the loader checks the ELF header and
+program headers rather than the filename contents.
+
+The current loader supports static `ET_EXEC` and `ET_DYN` binaries with
+`PT_LOAD` segments. ELF interpreters (`PT_INTERP`) and dynamic loading are not
+implemented yet.
+
+A small direct-syscall example is included:
+
+```text
+apps/hello.S
+```
+
+Build it and put it on the ext2 disk image:
+
+```bash
+make apps
+make disk-apps
+make run
+```
+
+It will be installed as:
+
+```text
+/bin/hello.ox
+```
+
+Then from the Oxenna shell:
+
+```text
+run /bin/hello.ox
+```
+
+You can also install any externally-built ELF file:
+
+```bash
+make disk-install APP=hello.ox DEST=/bin/hello.ox
+```
+
+The syscall ABI uses Linux x86-64 syscall numbers for the implemented calls,
+including `read`, `write`, `open`, `close`, `stat`, `fstat`, `lseek`, `mmap`,
+`munmap`, `brk`, `getpid`, `uname`, `getdents64`, `clock_gettime`,
+`arch_prctl`, `futex`, `openat`, `newfstatat`, `exit`, and `exit_group`.
+
+The process model is intentionally small: one userspace process runs at a
+time, `exit` returns control to the shell, and the process's user mappings are
+reclaimed afterwards.

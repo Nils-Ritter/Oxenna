@@ -15,7 +15,7 @@ use x86_64::{
 };
 
 use crate::{
-    acpi, console, console_print, fb::Color, gdt, pic, shell::shutdown,
+    acpi, console, console_print, fb::Color, gdt, pic,
 };
 
 static IDT: Once<InterruptDescriptorTable> =

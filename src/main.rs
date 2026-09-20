@@ -6,7 +6,10 @@
 extern crate alloc;
 
 mod fb;
+#[cfg(feature = "userspace")]
+mod elf;
 pub mod syscall;
+#[cfg(feature = "fs_ext2")]
 mod fs;
 mod acpi;
 mod font;
@@ -15,14 +18,21 @@ mod test;
 mod kmem;
 pub mod int;
 pub mod gdt;
+#[cfg(feature = "userspace")]
 mod user;
 mod pic;
 mod console;
+#[cfg(feature = "shell")]
 mod shell;
+mod drivers;
 
 #[cfg(feature = "test")]
 #[path = "../tests/trivial_assert.rs"]
 mod trivial_assert_test;
+
+#[cfg(feature = "test")]
+#[path = "../tests/filesystem.rs"]
+mod filesystem_test;
 
 #[cfg(feature = "test")]
 #[path = "../tests/userspace.rs"]
@@ -42,7 +52,6 @@ mod unit_tests;
 
 use core::panic::PanicInfo;
 
-pub const DEBUG_TOGGLE: bool = true;
 pub static mut TESTING: bool = false;
 
 use limine::{RequestsEndMarker, RequestsStartMarker, request::RsdpRequest};
@@ -149,9 +158,19 @@ fn kernel() -> !{
     console_println_color!(Color::BLUE, "/    |    \\>    <\\  ___/|   |  \\   |  \\/ __ \\_");
     console_println_color!(Color::BLUE, "\\_______  /__/\\_ \\\\___  >___|  /___|  (____  /");
     console_println_color!(Color::BLUE, "        \\/      \\/    \\/     \\/     \\/     \\/");
+    #[cfg(feature = "shell")]
     console_print!("\nType any command to get started: ");
+    #[cfg(not(feature = "shell"))]
+    console_println!();
     fb::present();
-    user::run()
+
+    #[cfg(all(feature = "userspace", not(feature = "shell")))]
+    user::run_init();
+
+    #[cfg(any(not(feature = "userspace"), feature = "shell"))]
+    loop {
+        core::hint::spin_loop();
+    }
 }
 
 use core::arch::asm;
