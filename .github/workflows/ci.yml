@@ -89,25 +89,3 @@ jobs:
 
       - name: Run kernel tests
         run: make test-nogui
-
-  release:
-    name: Release ISO
-    needs:
-      - build
-      - test
-    if: github.event_name == 'push' && github.ref_type == 'tag'
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: oxenna-build
-          path: release
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: release/oxenna.iso
-          generate_release_notes: true
