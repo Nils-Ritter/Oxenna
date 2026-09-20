@@ -77,7 +77,7 @@ endef
 
 .PHONY: all __build config menuconfig olddefconfig defconfig
 .PHONY: kernel kernel-tests apps disk-apps disk-install
-.PHONY: iso test-iso disk run test limine
+.PHONY: iso test-iso disk run test test-nogui limine
 .PHONY: clean cleaniso rebuild
 
 # ============================================================
@@ -323,6 +323,20 @@ test: $(TEST_ISO) disk
 	$(call banner,RUNNING KERNEL TESTS)
 	@set +e; \
 	qemu-system-x86_64 -cdrom $(TEST_ISO) -m 256M -serial stdio -monitor none \
+		-drive file=$(DISK),format=raw,if=ide \
+		-device isa-debug-exit,iobase=0xf4,iosize=0x04; \
+	status=$$?; \
+	if [ $$status -eq 33 ]; then printf "$(BOLD)$(GREEN)  ✓ ALL TESTS PASSED$(RESET)\n"; exit 0; \
+	elif [ $$status -eq 35 ]; then printf "$(BOLD)$(RED)  ✗ TESTS FAILED$(RESET)\n"; exit 1; \
+	else printf "$(BOLD)$(RED)  ✗ QEMU EXITED UNEXPECTEDLY$(RESET) status=%s\n" "$$status"; exit $$status; fi
+
+# Headless variant for CI environments without a graphical display.
+# The serial console remains attached to stdout, while QEMU's graphical
+# display is explicitly disabled.
+test-nogui: $(TEST_ISO) disk
+	$(call banner,RUNNING KERNEL TESTS (HEADLESS))
+	@set +e; \
+	qemu-system-x86_64 -cdrom $(TEST_ISO) -m 256M -display none -serial stdio -monitor none \
 		-drive file=$(DISK),format=raw,if=ide \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04; \
 	status=$$?; \
