@@ -72,7 +72,7 @@ pub fn execute(line: &str) {
             run_binapp(command, parts);
 
             #[cfg(not(feature = "userspace"))]
-            console_println!("No command or binapp found for: {}", command);
+            console_println_color!(Color::RED, "No command or binapp found for: {}", command);
         }
     }
 }
@@ -127,7 +127,7 @@ fn run_binapp(command: &str, args: core::str::SplitWhitespace<'_>) {
             _ => match fs.stat(&with_ox) {
                 Ok(stat) if matches!(stat.file_type, crate::fs::FileType::Regular) => with_ox,
                 _ => {
-                    console_println!("No command or binapp found for: {}", command);
+                    console_println_color!(Color::RED, "No command or binapp found for: {}", command);
                     return;
                 }
             },
@@ -136,11 +136,11 @@ fn run_binapp(command: &str, args: core::str::SplitWhitespace<'_>) {
 
     let argv: alloc::vec::Vec<&str> = args.collect();
 
-    console_println!("Starting {}...", path);
+    console_println_color!(Color::GREEN, "Starting {}...", path);
 
     match user::exec(&path, &argv) {
         Ok(result) => {
-            console_println!("{} exited with status {}", path, result.status);
+            console_println_color!(Color::GREEN, "{} exited with status {}", path, result.status);
         }
         Err(e) => {
             console_println!("run: '{}': {:?}", path, e);
@@ -157,7 +157,7 @@ fn run(mut args: core::str::SplitWhitespace<'_>) {
 
     let path = absolute_path(program);
     if !path.ends_with(".ox") {
-        console_println!("run: '{}' is not an Oxenna .ox executable", program);
+        console_println_color!(Color::RED, "run: '{}' is not an Oxenna .ox executable", program);
         return;
     }
 
@@ -167,7 +167,7 @@ fn run(mut args: core::str::SplitWhitespace<'_>) {
 
     match user::exec(&path, &argv) {
         Ok(result) => {
-            console_println!("{} exited with status {}", path, result.status);
+            console_println_color!(Color::GREEN, "{} exited with status {}", path, result.status);
         }
         Err(e) => {
             console_println!("run: '{}': {:?}", path, e);

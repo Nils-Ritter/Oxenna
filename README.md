@@ -165,17 +165,6 @@ cargo check
 Because Oxenna is a bare-metal project,
 some standard Rust tooling and libraries are not available inside the kernel.
 
-## Roadmap
-
-- [ ] Implement a disk driver
-- [ ] Improve automated testing
-- [ ] Support additional hardware
-- [ ] Write a basic scheduler
-
-## License
-
-This project is licensed under the terms of the license included in this repository.
-
 ## `.ox` userspace applications
 
 Oxxena applications are ordinary **x86-64 ELF64** executables. The `.ox`
@@ -226,3 +215,14 @@ including `read`, `write`, `open`, `close`, `stat`, `fstat`, `lseek`, `mmap`,
 The process model is intentionally small: one userspace process runs at a
 time, `exit` returns control to the shell, and the process's user mappings are
 reclaimed afterwards.
+
+## Roadmap
+
+- [x] Implement a disk driver
+- [ ] Improve automated testing
+- [ ] Support additional hardware
+- [ ] Write a basic scheduler
+
+## License
+
+This project is licensed under the terms of the license included in this repository.
