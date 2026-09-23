@@ -148,7 +148,7 @@ pub fn run() -> ! {
 // QEMU exit
 // ============================================================
 
-pub fn exit_qemu(
+fn exit_qemu(
     success: bool,
 ) -> ! {
     //

@@ -24,6 +24,7 @@ CARGO_FEATURE_MAP = {
     "FS_EXT2": "fs_ext2",
     "DRIVER_BLOCK": "driver_block",
     "DRIVER_ATA": "driver_ata",
+    "DRIVER_QEMU": "driver_qemu",
 }
 
 @dataclass

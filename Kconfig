@@ -28,6 +28,9 @@ config ELF_ET_DYN
     bool "Enable ET_DYN / PIE executables"
     default y
 
+config BUILD_FHS
+    bool "Create FHS-compliant filesystem hierarchy"
+    default n
 
 config ELF_ET_EXEC
     bool "Enable ET_EXEC executables"
@@ -72,6 +75,9 @@ config DRIVER_ATA
     bool "ATA PIO disk driver"
     default y
     depends on DRIVER_BLOCK
+config DRIVER_QEMU
+    bool "QEMU Power management driver"
+    default y
 endmenu
 
 menu "Filesystems"

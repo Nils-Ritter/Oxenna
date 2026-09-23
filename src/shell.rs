@@ -14,10 +14,13 @@ use crate::{
     fb::{self, Color},
     fs::{Entry, FS},
     kmem::{self, FRAME_ALLOCATOR},
-    test::exit_qemu,
 };
 use crate::test::TestResult;
 use crate::test::test;
+
+#[cfg(feature = "driver_qemu")]
+use crate::drivers::qemu::qemu_shutdown;
+
 
 /// Shell working directory, stored as a normalized absolute path.
 ///
@@ -482,8 +485,9 @@ fn reboot(){
 
 pub fn shutdown(){
     console_println!("There currently is no support for acpi shutdown.");
-    console_println!("However, qemu will close normally.");
-    exit_qemu(true);
+    console_println!("However, qemu will close normally with the QEMU driver enabled.");
+    #[cfg(feature = "driver_qemu")]
+    qemu_shutdown(true);
 }
 
 fn setbg(mut args: core::str::SplitWhitespace<'_>) {
