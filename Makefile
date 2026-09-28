@@ -510,6 +510,7 @@ test: $(TEST_ISO) disk
 		-m 256M \
 		-serial stdio \
 		-monitor none \
+		-display none \
 		-drive file=$(DISK),format=raw,if=ide \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04; \
 	status=$$?; \

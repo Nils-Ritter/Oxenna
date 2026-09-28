@@ -251,32 +251,84 @@ impl Inode {
     fn zeroed() -> Self {
         Inode { raw: [0; 128] }
     }
-    fn mode(&self) -> u16 { rd16(&self.raw, 0) }
-    fn set_mode(&mut self, v: u16) { wr16(&mut self.raw, 0, v) }
-    fn size(&self) -> u32 { rd32(&self.raw, 4) }
-    fn set_size(&mut self, v: u32) { wr32(&mut self.raw, 4, v) }
-    fn atime(&self) -> u32 { rd32(&self.raw, 8) }
-    fn set_atime(&mut self, v: u32) { wr32(&mut self.raw, 8, v) }
-    fn ctime(&self) -> u32 { rd32(&self.raw, 12) }
-    fn set_ctime(&mut self, v: u32) { wr32(&mut self.raw, 12, v) }
-    fn mtime(&self) -> u32 { rd32(&self.raw, 16) }
-    fn set_mtime(&mut self, v: u32) { wr32(&mut self.raw, 16, v) }
-    fn set_dtime(&mut self, v: u32) { wr32(&mut self.raw, 20, v) }
-    fn links(&self) -> u16 { rd16(&self.raw, 26) }
-    fn set_links(&mut self, v: u16) { wr16(&mut self.raw, 26, v) }
-    fn blocks(&self) -> u32 { rd32(&self.raw, 28) }
-    fn set_blocks(&mut self, v: u32) { wr32(&mut self.raw, 28, v) }
-    fn flags(&self) -> u32 { rd32(&self.raw, 32) }
-    fn set_flags(&mut self, v: u32) { wr32(&mut self.raw, 32, v) }
-    fn block(&self, i: usize) -> u32 { rd32(&self.raw, 40 + 4 * i) }
-    fn set_block(&mut self, i: usize, v: u32) { wr32(&mut self.raw, 40 + 4 * i, v) }
-    fn uid(&self) -> u32 { rd16(&self.raw, 2) as u32 | ((rd16(&self.raw, 120) as u32) << 16) }
-    fn gid(&self) -> u32 { rd16(&self.raw, 24) as u32 | ((rd16(&self.raw, 122) as u32) << 16) }
-    fn kind(&self) -> u16 { self.mode() & S_IFMT }
-    fn is_dir(&self) -> bool { self.kind() == S_IFDIR }
-    fn is_reg(&self) -> bool { self.kind() == S_IFREG }
-    fn is_lnk(&self) -> bool { self.kind() == S_IFLNK }
-    fn is_fast_symlink(&self) -> bool { self.is_lnk() && (self.size() as usize) < FAST_SYMLINK_MAX }
+    fn mode(&self) -> u16 {
+        rd16(&self.raw, 0)
+    }
+    fn set_mode(&mut self, v: u16) {
+        wr16(&mut self.raw, 0, v)
+    }
+    fn size(&self) -> u32 {
+        rd32(&self.raw, 4)
+    }
+    fn set_size(&mut self, v: u32) {
+        wr32(&mut self.raw, 4, v)
+    }
+    fn atime(&self) -> u32 {
+        rd32(&self.raw, 8)
+    }
+    fn set_atime(&mut self, v: u32) {
+        wr32(&mut self.raw, 8, v)
+    }
+    fn ctime(&self) -> u32 {
+        rd32(&self.raw, 12)
+    }
+    fn set_ctime(&mut self, v: u32) {
+        wr32(&mut self.raw, 12, v)
+    }
+    fn mtime(&self) -> u32 {
+        rd32(&self.raw, 16)
+    }
+    fn set_mtime(&mut self, v: u32) {
+        wr32(&mut self.raw, 16, v)
+    }
+    fn set_dtime(&mut self, v: u32) {
+        wr32(&mut self.raw, 20, v)
+    }
+    fn links(&self) -> u16 {
+        rd16(&self.raw, 26)
+    }
+    fn set_links(&mut self, v: u16) {
+        wr16(&mut self.raw, 26, v)
+    }
+    fn blocks(&self) -> u32 {
+        rd32(&self.raw, 28)
+    }
+    fn set_blocks(&mut self, v: u32) {
+        wr32(&mut self.raw, 28, v)
+    }
+    fn flags(&self) -> u32 {
+        rd32(&self.raw, 32)
+    }
+    fn set_flags(&mut self, v: u32) {
+        wr32(&mut self.raw, 32, v)
+    }
+    fn block(&self, i: usize) -> u32 {
+        rd32(&self.raw, 40 + 4 * i)
+    }
+    fn set_block(&mut self, i: usize, v: u32) {
+        wr32(&mut self.raw, 40 + 4 * i, v)
+    }
+    fn uid(&self) -> u32 {
+        rd16(&self.raw, 2) as u32 | ((rd16(&self.raw, 120) as u32) << 16)
+    }
+    fn gid(&self) -> u32 {
+        rd16(&self.raw, 24) as u32 | ((rd16(&self.raw, 122) as u32) << 16)
+    }
+    fn kind(&self) -> u16 {
+        self.mode() & S_IFMT
+    }
+    fn is_dir(&self) -> bool {
+        self.kind() == S_IFDIR
+    }
+    fn is_reg(&self) -> bool {
+        self.kind() == S_IFREG
+    }
+    fn is_lnk(&self) -> bool {
+        self.kind() == S_IFLNK
+    }
+    fn is_fast_symlink(&self) -> bool {
+        self.is_lnk() && (self.size() as usize) < FAST_SYMLINK_MAX
+    }
     /// Does i_block[] hold block pointers (as opposed to inline symlink text / device numbers)?
     fn has_block_pointers(&self) -> bool {
         self.is_reg() || self.is_dir() || (self.is_lnk() && !self.is_fast_symlink())
@@ -299,7 +351,12 @@ fn parse_dirent(b: &[u8], off: usize, bs: usize) -> Result<RawDirent, FsError> {
     if rec_len < 8 || rec_len % 4 != 0 || off + rec_len > bs || 8 + name_len > rec_len {
         return Err(FsError::Corrupt);
     }
-    Ok(RawDirent { inode: rd32(b, off), rec_len, name_len, ftype: b[off + 7] })
+    Ok(RawDirent {
+        inode: rd32(b, off),
+        rec_len,
+        name_len,
+        ftype: b[off + 7],
+    })
 }
 
 fn put_dirent(buf: &mut [u8], off: usize, ino: u32, rec_len: usize, name: &[u8], ft: u8) {
@@ -355,10 +412,16 @@ impl<D: BlockDevice> Ext2<D> {
         let (inode_size, first_ino, filetype) = if rev >= 1 {
             let incompat = rd32(&sb, 96);
             let ro = rd32(&sb, 100);
-            if incompat & !INCOMPAT_FILETYPE != 0 || ro & !(RO_COMPAT_SPARSE_SUPER | RO_COMPAT_LARGE_FILE) != 0 {
+            if incompat & !INCOMPAT_FILETYPE != 0
+                || ro & !(RO_COMPAT_SPARSE_SUPER | RO_COMPAT_LARGE_FILE) != 0
+            {
                 return Err(FsError::Unsupported);
             }
-            (rd16(&sb, 88) as usize, rd32(&sb, 84), incompat & INCOMPAT_FILETYPE != 0)
+            (
+                rd16(&sb, 88) as usize,
+                rd32(&sb, 84),
+                incompat & INCOMPAT_FILETYPE != 0,
+            )
         } else {
             (128, 11, false)
         };
@@ -369,7 +432,12 @@ impl<D: BlockDevice> Ext2<D> {
         let first_data_block = rd32(&sb, 20);
         let bpg = rd32(&sb, 32);
         let ipg = rd32(&sb, 40);
-        if bpg == 0 || ipg == 0 || bpg as usize > bs * 8 || ipg as usize > bs * 8 || blocks_count <= first_data_block {
+        if bpg == 0
+            || ipg == 0
+            || bpg as usize > bs * 8
+            || ipg as usize > bs * 8
+            || blocks_count <= first_data_block
+        {
             return Err(FsError::BadSuperblock);
         }
         let spb = (bs / SECTOR_SIZE) as u32;
@@ -449,7 +517,8 @@ impl<D: BlockDevice> Ext2<D> {
         if blk >= self.blocks_count {
             return Err(FsError::Corrupt);
         }
-        self.dev.read_sectors(blk as u64 * self.spb as u64, &mut buf[..self.bs])?;
+        self.dev
+            .read_sectors(blk as u64 * self.spb as u64, &mut buf[..self.bs])?;
         Ok(())
     }
 
@@ -457,22 +526,41 @@ impl<D: BlockDevice> Ext2<D> {
         if blk >= self.blocks_count {
             return Err(FsError::Corrupt);
         }
-        self.dev.write_sectors(blk as u64 * self.spb as u64, &buf[..self.bs])?;
+        self.dev
+            .write_sectors(blk as u64 * self.spb as u64, &buf[..self.bs])?;
         Ok(())
     }
 
     fn gd_off(g: u32) -> usize {
         g as usize * 32
     }
-    fn gd_block_bitmap(&self, g: u32) -> u32 { rd32(&self.gdt, Self::gd_off(g)) }
-    fn gd_inode_bitmap(&self, g: u32) -> u32 { rd32(&self.gdt, Self::gd_off(g) + 4) }
-    fn gd_inode_table(&self, g: u32) -> u32 { rd32(&self.gdt, Self::gd_off(g) + 8) }
-    fn gd_free_blocks(&self, g: u32) -> u16 { rd16(&self.gdt, Self::gd_off(g) + 12) }
-    fn gd_free_inodes(&self, g: u32) -> u16 { rd16(&self.gdt, Self::gd_off(g) + 14) }
-    fn gd_used_dirs(&self, g: u32) -> u16 { rd16(&self.gdt, Self::gd_off(g) + 16) }
-    fn gd_set_free_blocks(&mut self, g: u32, v: u16) { wr16(&mut self.gdt, Self::gd_off(g) + 12, v) }
-    fn gd_set_free_inodes(&mut self, g: u32, v: u16) { wr16(&mut self.gdt, Self::gd_off(g) + 14, v) }
-    fn gd_set_used_dirs(&mut self, g: u32, v: u16) { wr16(&mut self.gdt, Self::gd_off(g) + 16, v) }
+    fn gd_block_bitmap(&self, g: u32) -> u32 {
+        rd32(&self.gdt, Self::gd_off(g))
+    }
+    fn gd_inode_bitmap(&self, g: u32) -> u32 {
+        rd32(&self.gdt, Self::gd_off(g) + 4)
+    }
+    fn gd_inode_table(&self, g: u32) -> u32 {
+        rd32(&self.gdt, Self::gd_off(g) + 8)
+    }
+    fn gd_free_blocks(&self, g: u32) -> u16 {
+        rd16(&self.gdt, Self::gd_off(g) + 12)
+    }
+    fn gd_free_inodes(&self, g: u32) -> u16 {
+        rd16(&self.gdt, Self::gd_off(g) + 14)
+    }
+    fn gd_used_dirs(&self, g: u32) -> u16 {
+        rd16(&self.gdt, Self::gd_off(g) + 16)
+    }
+    fn gd_set_free_blocks(&mut self, g: u32, v: u16) {
+        wr16(&mut self.gdt, Self::gd_off(g) + 12, v)
+    }
+    fn gd_set_free_inodes(&mut self, g: u32, v: u16) {
+        wr16(&mut self.gdt, Self::gd_off(g) + 14, v)
+    }
+    fn gd_set_used_dirs(&mut self, g: u32, v: u16) {
+        wr16(&mut self.gdt, Self::gd_off(g) + 16, v)
+    }
 
     fn inode_loc(&self, ino: u32) -> Result<(u32, usize), FsError> {
         if ino == 0 || ino > self.inodes_count {
@@ -481,7 +569,10 @@ impl<D: BlockDevice> Ext2<D> {
         let g = (ino - 1) / self.ipg;
         let idx = (ino - 1) % self.ipg;
         let byte = idx as u64 * self.inode_size as u64;
-        Ok((self.gd_inode_table(g) + (byte / self.bs as u64) as u32, (byte % self.bs as u64) as usize))
+        Ok((
+            self.gd_inode_table(g) + (byte / self.bs as u64) as u32,
+            (byte % self.bs as u64) as usize,
+        ))
     }
 
     fn read_inode(&mut self, ino: u32) -> Result<Inode, FsError> {
@@ -616,7 +707,13 @@ impl<D: BlockDevice> Ext2<D> {
     }
 
     /// Map file block `lblk` to a physical block. Returns 0 for a hole when `create` is false.
-    fn bmap(&mut self, ino: &mut Inode, goal: u32, lblk: u32, create: bool) -> Result<u32, FsError> {
+    fn bmap(
+        &mut self,
+        ino: &mut Inode,
+        goal: u32,
+        lblk: u32,
+        create: bool,
+    ) -> Result<u32, FsError> {
         let ppb = (self.bs / 4) as u64;
         let l = lblk as u64;
         if l < 12 {
@@ -680,7 +777,13 @@ impl<D: BlockDevice> Ext2<D> {
 
     /// Free everything under indirect block `blk` at file-relative index >= `keep_from`.
     /// Returns true if `blk` itself became empty and was freed.
-    fn free_subtree(&mut self, blk: u32, depth: u32, keep_from: u64, freed: &mut u32) -> Result<bool, FsError> {
+    fn free_subtree(
+        &mut self,
+        blk: u32,
+        depth: u32,
+        keep_from: u64,
+        freed: &mut u32,
+    ) -> Result<bool, FsError> {
         let ppb = (self.bs / 4) as u64;
         let span = ppb.pow(depth - 1);
         let mut buf = vec![0u8; self.bs];
@@ -757,7 +860,11 @@ impl<D: BlockDevice> Ext2<D> {
 
     fn check_dir(&mut self, ino: u32) -> Result<Inode, FsError> {
         let i = self.read_inode(ino)?;
-        if i.is_dir() { Ok(i) } else { Err(FsError::NotDir) }
+        if i.is_dir() {
+            Ok(i)
+        } else {
+            Err(FsError::NotDir)
+        }
     }
 
     fn dir_find(&mut self, dir: &mut Inode, name: &[u8]) -> Result<Option<(u32, u8)>, FsError> {
@@ -773,7 +880,10 @@ impl<D: BlockDevice> Ext2<D> {
             let mut off = 0;
             while off < bs {
                 let e = parse_dirent(&buf, off, bs)?;
-                if e.inode != 0 && e.name_len == name.len() && &buf[off + 8..off + 8 + e.name_len] == name {
+                if e.inode != 0
+                    && e.name_len == name.len()
+                    && &buf[off + 8..off + 8 + e.name_len] == name
+                {
                     return Ok(Some((e.inode, e.ftype)));
                 }
                 off += e.rec_len;
@@ -799,7 +909,11 @@ impl<D: BlockDevice> Ext2<D> {
             let mut off = 0;
             while off < bs {
                 let e = parse_dirent(&buf, off, bs)?;
-                let used = if e.inode == 0 { 0 } else { align4(8 + e.name_len) };
+                let used = if e.inode == 0 {
+                    0
+                } else {
+                    align4(8 + e.name_len)
+                };
                 if e.rec_len - used >= need {
                     if e.inode == 0 {
                         put_dirent(&mut buf, off, child, e.rec_len, name, ft);
@@ -844,7 +958,10 @@ impl<D: BlockDevice> Ext2<D> {
             let mut off = 0;
             while off < bs {
                 let e = parse_dirent(&buf, off, bs)?;
-                if e.inode != 0 && e.name_len == name.len() && &buf[off + 8..off + 8 + e.name_len] == name {
+                if e.inode != 0
+                    && e.name_len == name.len()
+                    && &buf[off + 8..off + 8 + e.name_len] == name
+                {
                     match prev {
                         Some(p) => {
                             let pl = rd16(&buf, p + 4) as usize;
@@ -959,7 +1076,10 @@ impl<D: BlockDevice> Ext2<D> {
         i.set_atime(now);
         i.set_ctime(now);
         i.set_mtime(now);
-        if let Err(e) = self.write_inode(ino, &i).and_then(|_| self.dir_add(dir, nb, ino, ftype)) {
+        if let Err(e) = self
+            .write_inode(ino, &i)
+            .and_then(|_| self.dir_add(dir, nb, ino, ftype))
+        {
             let _ = self.free_inode(ino, false);
             return Err(e);
         }
@@ -999,7 +1119,9 @@ impl<D: BlockDevice> Ext2<D> {
             return Err(FsError::NameTooLong);
         }
         let mut d = self.check_dir(dir)?;
-        self.dir_find(&mut d, nb)?.map(|(i, _)| i).ok_or(FsError::NotFound)
+        self.dir_find(&mut d, nb)?
+            .map(|(i, _)| i)
+            .ok_or(FsError::NotFound)
     }
 
     pub fn readdir(&mut self, dir: u32) -> Result<Vec<DirEntry>, FsError> {
@@ -1020,8 +1142,13 @@ impl<D: BlockDevice> Ext2<D> {
                 if e.inode != 0 {
                     out.push(DirEntry {
                         ino: e.inode,
-                        name: String::from_utf8_lossy(&buf[off + 8..off + 8 + e.name_len]).into_owned(),
-                        file_type: if self.filetype { FileType::from_dirent(e.ftype) } else { FileType::Unknown },
+                        name: String::from_utf8_lossy(&buf[off + 8..off + 8 + e.name_len])
+                            .into_owned(),
+                        file_type: if self.filetype {
+                            FileType::from_dirent(e.ftype)
+                        } else {
+                            FileType::Unknown
+                        },
                     });
                 }
                 off += e.rec_len;
@@ -1262,7 +1389,9 @@ impl<D: BlockDevice> Ext2<D> {
             i.set_block(0, data_blk);
             i.set_blocks(self.spb);
         }
-        let res = self.write_inode(ino, &i).and_then(|_| self.dir_add(dir, nb, ino, FT_SYMLINK));
+        let res = self
+            .write_inode(ino, &i)
+            .and_then(|_| self.dir_add(dir, nb, ino, FT_SYMLINK));
         if let Err(e) = res {
             if data_blk != 0 {
                 let _ = self.free_block(data_blk);
@@ -1365,7 +1494,13 @@ impl<D: BlockDevice> Ext2<D> {
         self.sync()
     }
 
-    pub fn rename(&mut self, old_dir: u32, old_name: &str, new_dir: u32, new_name: &str) -> Result<(), FsError> {
+    pub fn rename(
+        &mut self,
+        old_dir: u32,
+        old_name: &str,
+        new_dir: u32,
+        new_name: &str,
+    ) -> Result<(), FsError> {
         let (on, nn) = (old_name.as_bytes(), new_name.as_bytes());
         validate_name(on)?;
         validate_name(nn)?;
@@ -1470,9 +1605,22 @@ impl<D: BlockDevice> Ext2<D> {
         self.walk(cwd, path, follow_last, &mut depth)
     }
 
-    fn walk(&mut self, start: u32, path: &str, follow_last: bool, depth: &mut u32) -> Result<u32, FsError> {
-        let mut cur = if path.starts_with('/') { ROOT_INO } else { start };
-        let comps: Vec<&str> = path.split('/').filter(|c| !c.is_empty() && *c != ".").collect();
+    fn walk(
+        &mut self,
+        start: u32,
+        path: &str,
+        follow_last: bool,
+        depth: &mut u32,
+    ) -> Result<u32, FsError> {
+        let mut cur = if path.starts_with('/') {
+            ROOT_INO
+        } else {
+            start
+        };
+        let comps: Vec<&str> = path
+            .split('/')
+            .filter(|c| !c.is_empty() && *c != ".")
+            .collect();
         for (idx, c) in comps.iter().enumerate() {
             let last = idx + 1 == comps.len();
             let next = self.lookup(cur, c)?;
@@ -1493,7 +1641,11 @@ impl<D: BlockDevice> Ext2<D> {
     }
 
     /// Split `path` into (parent directory inode, final name). Parent symlinks are followed.
-    pub fn resolve_parent<'a>(&mut self, cwd: u32, path: &'a str) -> Result<(u32, &'a str), FsError> {
+    pub fn resolve_parent<'a>(
+        &mut self,
+        cwd: u32,
+        path: &'a str,
+    ) -> Result<(u32, &'a str), FsError> {
         let t = path.trim_end_matches('/');
         if t.is_empty() {
             return Err(FsError::Invalid);

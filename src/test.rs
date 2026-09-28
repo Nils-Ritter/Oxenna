@@ -1,7 +1,9 @@
 pub use oxenna_test_macro::test;
 
 use crate::{
-    console, console_print, console_println,
+    console::{self, Console},
+    console_print, console_println,
+    fb::Color,
 };
 
 pub enum TestResult {
@@ -67,26 +69,18 @@ pub fn run() -> ! {
     let mut passed = 0usize;
     let mut failed = 0usize;
 
-    let mut current: *const Test =
-        &raw const __kernel_tests_start;
+    let mut current: *const Test = &raw const __kernel_tests_start;
 
-    let end: *const Test =
-        &raw const __kernel_tests_end;
+    let end: *const Test = &raw const __kernel_tests_end;
 
     while current < end {
-        let test = unsafe {
-            &*current
-        };
+        let test = unsafe { &*current };
 
         total += 1;
 
-        console_print!(
-            "test {} ... ",
-            test.name
-        );
+        console_print!("test {} ... ", test.name);
 
-        let result =
-            (test.function)();
+        let result = (test.function)();
 
         match result {
             TestResult::Pass => {
@@ -99,16 +93,15 @@ pub fn run() -> ! {
                 failed += 1;
 
                 console_println!("FAIL");
-                console_println!(
-                    "    {}",
-                    reason
-                );
+                console_println!("    {}", reason);
             }
         }
 
-        current = unsafe {
-            current.add(1)
-        };
+        current = unsafe { current.add(1) };
+
+        console::with_console(|console| {
+            Console::set_background(console, Color::BLACK);
+        });
     }
 
     console_println!();
@@ -121,20 +114,14 @@ pub fn run() -> ! {
         failed
     );
 
-    console_println!(
-        "========================================"
-    );
+    console_println!("========================================");
 
     if failed == 0 {
-        console_println!(
-            "ALL TESTS PASSED"
-        );
+        console_println!("ALL TESTS PASSED");
 
         exit_qemu(true);
     } else {
-        console_println!(
-            "TESTS FAILED"
-        );
+        console_println!("TESTS FAILED");
 
         exit_qemu(false);
     }
@@ -148,20 +135,13 @@ pub fn run() -> ! {
 // QEMU exit
 // ============================================================
 
-fn exit_qemu(
-    success: bool,
-) -> ! {
+fn exit_qemu(success: bool) -> ! {
     //
     // QEMU's isa-debug-exit device listens on
     // port 0xf4.
     //
 
-    let code: u32 =
-        if success {
-            0x10
-        } else {
-            0x11
-        };
+    let code: u32 = if success { 0x10 } else { 0x11 };
 
     unsafe {
         core::arch::asm!(

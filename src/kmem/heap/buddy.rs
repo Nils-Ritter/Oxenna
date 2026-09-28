@@ -32,12 +32,7 @@
 //! only allowed up to that zone's own top order, so it can never reach
 //! outside the zone's bounds.
 
-use core::{
-    alloc::Layout,
-    cmp,
-    mem::size_of,
-    ptr,
-};
+use core::{alloc::Layout, cmp, mem::size_of, ptr};
 
 use super::MemoryAllocator;
 
@@ -160,7 +155,10 @@ impl BuddyAllocator {
                 break;
             }
 
-            assert!(self.zone_count < MAX_ZONES, "heap decomposes into too many zones");
+            assert!(
+                self.zone_count < MAX_ZONES,
+                "heap decomposes into too many zones"
+            );
 
             self.zones[self.zone_count] = Some(Zone { base: addr, order });
             self.zone_count += 1;
@@ -322,11 +320,7 @@ impl BuddyAllocator {
     }
 
     #[allow(unused)]
-    pub fn contains_free_block(
-        &self,
-        addr: usize,
-        order: usize,
-    ) -> bool {
+    pub fn contains_free_block(&self, addr: usize, order: usize) -> bool {
         let index = Self::index_for(order);
         let target = addr as *mut FreeListNode;
 
@@ -337,9 +331,7 @@ impl BuddyAllocator {
                 return true;
             }
 
-            current = unsafe {
-                (*current).next
-            };
+            current = unsafe { (*current).next };
         }
 
         false

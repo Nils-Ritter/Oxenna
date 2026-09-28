@@ -59,8 +59,14 @@ fn u32le(b: &[u8], o: usize) -> u32 {
 }
 fn u64le(b: &[u8], o: usize) -> u64 {
     u64::from_le_bytes([
-        b[o], b[o + 1], b[o + 2], b[o + 3],
-        b[o + 4], b[o + 5], b[o + 6], b[o + 7],
+        b[o],
+        b[o + 1],
+        b[o + 2],
+        b[o + 3],
+        b[o + 4],
+        b[o + 5],
+        b[o + 6],
+        b[o + 7],
     ])
 }
 
@@ -83,9 +89,8 @@ impl Elf64 {
         }
 
         let kind = u16le(image, 16);
-        let supported_type =
-            (kind == ET_DYN && cfg!(feature = "elf_et_dyn")) ||
-            (kind == ET_EXEC && cfg!(feature = "elf_et_exec"));
+        let supported_type = (kind == ET_DYN && cfg!(feature = "elf_et_dyn"))
+            || (kind == ET_EXEC && cfg!(feature = "elf_et_exec"));
         if !supported_type {
             return Err(ElfError::UnsupportedType);
         }
@@ -101,7 +106,11 @@ impl Elf64 {
         }
 
         let ph_end = phoff
-            .checked_add((phentsize as u64).checked_mul(phnum as u64).ok_or(ElfError::BadHeader)?)
+            .checked_add(
+                (phentsize as u64)
+                    .checked_mul(phnum as u64)
+                    .ok_or(ElfError::BadHeader)?,
+            )
             .ok_or(ElfError::BadHeader)?;
         if ph_end > image.len() as u64 {
             return Err(ElfError::BadHeader);
@@ -150,7 +159,11 @@ impl Elf64 {
                 if ph.filesz > ph.memsz {
                     return Err(ElfError::InvalidSegment);
                 }
-                if ph.offset.checked_add(ph.filesz).map_or(true, |e| e > image.len() as u64) {
+                if ph
+                    .offset
+                    .checked_add(ph.filesz)
+                    .map_or(true, |e| e > image.len() as u64)
+                {
                     return Err(ElfError::InvalidSegment);
                 }
                 if ph.vaddr.checked_add(ph.memsz).is_none() {

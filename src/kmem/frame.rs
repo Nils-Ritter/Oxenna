@@ -14,20 +14,11 @@
 //! This is suitable for the early stages of the kernel. It can later be
 //! replaced by a bitmap, buddy allocator, or another physical allocator.
 
-use limine::memmap::{
-    Entry,
-    MEMMAP_USABLE,
-};
+use limine::memmap::{Entry, MEMMAP_USABLE};
 
 use x86_64::{
-    structures::paging::{
-        FrameAllocator,
-        FrameDeallocator,
-        PhysFrame,
-        Size4KiB,
-    },
-    PhysAddr,
-    VirtAddr,
+    PhysAddr, VirtAddr,
+    structures::paging::{FrameAllocator, FrameDeallocator, PhysFrame, Size4KiB},
 };
 
 #[derive(Clone, Copy)]
@@ -85,10 +76,7 @@ impl BootInfoFrameAllocator {
     /// is actually available for physical frame allocation, except for
     /// ranges explicitly reserved with [`Self::reserve`], and that
     /// `phys_mem_offset` really does map all physical memory read/write.
-    pub unsafe fn new(
-        memory_map: &'static [&'static Entry],
-        phys_mem_offset: VirtAddr,
-    ) -> Self {
+    pub unsafe fn new(memory_map: &'static [&'static Entry], phys_mem_offset: VirtAddr) -> Self {
         Self {
             memory_map,
             phys_mem_offset,
@@ -263,8 +251,7 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
             let region = self.next_usable_region()?;
 
             let region_start = align_up(region.base, FRAME_SIZE);
-            let region_end =
-                align_down(region.base.checked_add(region.length)?, FRAME_SIZE);
+            let region_end = align_down(region.base.checked_add(region.length)?, FRAME_SIZE);
 
             // Start at the beginning of this region.
             if self.next_frame == 0 {
@@ -276,8 +263,7 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
 
             // Check whether the region still has frames.
             if self.next_frame < region_end {
-                let frame =
-                    PhysFrame::containing_address(PhysAddr::new(self.next_frame));
+                let frame = PhysFrame::containing_address(PhysAddr::new(self.next_frame));
 
                 self.next_frame += FRAME_SIZE;
 

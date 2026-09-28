@@ -1,4 +1,9 @@
-use alloc::{collections::{BTreeMap, BTreeSet}, format, string::String, vec::Vec};
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    format,
+    string::String,
+    vec::Vec,
+};
 
 use crate::fs::{Entry, FileSystem, FsError};
 
@@ -54,7 +59,9 @@ impl TmpFs {
             return Err(FsError::NotFound);
         }
 
-        self.files.entry(String::from(path)).or_insert_with(Vec::new);
+        self.files
+            .entry(String::from(path))
+            .or_insert_with(Vec::new);
 
         Ok(())
     }
@@ -82,7 +89,12 @@ impl TmpFs {
     }
 
     fn last_segment(path: &str) -> String {
-        String::from(path.trim_end_matches('/').rsplit('/').next().unwrap_or(path))
+        String::from(
+            path.trim_end_matches('/')
+                .rsplit('/')
+                .next()
+                .unwrap_or(path),
+        )
     }
 }
 
@@ -102,7 +114,8 @@ impl FileSystem for TmpFs {
     }
 
     fn list(&self, path: &str) -> Result<Vec<String>, FsError> {
-        Ok(self.list_entries(path)?
+        Ok(self
+            .list_entries(path)?
             .into_iter()
             .map(|e| match e {
                 Entry::File(name) => name,

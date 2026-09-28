@@ -13,7 +13,11 @@ pub struct FormatOptions<'a> {
 
 impl Default for FormatOptions<'_> {
     fn default() -> Self {
-        FormatOptions { block_size: 4096, bytes_per_inode: 16384, label: "" }
+        FormatOptions {
+            block_size: 4096,
+            bytes_per_inode: 16384,
+            label: "",
+        }
     }
 }
 
@@ -39,7 +43,8 @@ impl<D: BlockDevice> Ext2<D> {
         let (mut ngroups, mut ipg, mut itb, mut gdt_blocks) = (0u32, 0u32, 0u32, 0u32);
         loop {
             let ng = (usable + bpg - 1) / bpg;
-            let want = ((usable as u64 * bs as u64) / opts.bytes_per_inode.max(1024) as u64).max(32) as u32;
+            let want = ((usable as u64 * bs as u64) / opts.bytes_per_inode.max(1024) as u64).max(32)
+                as u32;
             let mut ip = (want + ng - 1) / ng;
             ip = ((ip + ipb - 1) / ipb) * ipb;
             ip = ip.max(((16 + ipb - 1) / ipb) * ipb).min(bpg);
@@ -75,7 +80,11 @@ impl<D: BlockDevice> Ext2<D> {
 
         for g in 0..ngroups {
             let gstart = first_data + g * bpg;
-            let gblocks = if g == ngroups - 1 { usable - g * bpg } else { bpg };
+            let gblocks = if g == ngroups - 1 {
+                usable - g * bpg
+            } else {
+                bpg
+            };
             let mut off = gstart;
             if has_super(g) {
                 off += 1 + gdt_blocks; // superblock (copy) + descriptor table

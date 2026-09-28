@@ -15,23 +15,15 @@
 //!     Physical frames
 //! ```
 
-use core::alloc::{
-    GlobalAlloc,
-    Layout,
-};
+use core::alloc::{GlobalAlloc, Layout};
 
 use spin::Mutex;
 
 use x86_64::{
-    structures::paging::{
-        FrameAllocator,
-        mapper::MapToError,
-        Mapper,
-        Page,
-        PageTableFlags,
-        Size4KiB,
-    },
     VirtAddr,
+    structures::paging::{
+        FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB, mapper::MapToError,
+    },
 };
 
 use crate::kmem::heap::buddy::BuddyAllocator;

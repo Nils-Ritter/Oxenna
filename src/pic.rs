@@ -4,14 +4,8 @@ use spin::Mutex;
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = 40;
 
-pub static PICS: Mutex<ChainedPics> = unsafe {
-    Mutex::new(
-        ChainedPics::new(
-            PIC_1_OFFSET,
-            PIC_2_OFFSET,
-        )
-    )
-};
+pub static PICS: Mutex<ChainedPics> =
+    unsafe { Mutex::new(ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET)) };
 
 pub fn init() {
     unsafe {
@@ -36,7 +30,6 @@ pub fn init() {
 
 pub fn end_of_interrupt(interrupt_id: u8) {
     unsafe {
-        PICS.lock()
-            .notify_end_of_interrupt(interrupt_id);
+        PICS.lock().notify_end_of_interrupt(interrupt_id);
     }
 }

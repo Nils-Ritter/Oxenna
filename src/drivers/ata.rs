@@ -37,23 +37,31 @@ const SPIN_LIMIT: u32 = 5_000_000;
 
 #[inline]
 unsafe fn outb(port: u16, v: u8) {
-    unsafe { asm!("out dx, al", in("dx") port, in("al") v, options(nomem, nostack, preserves_flags)) }
+    unsafe {
+        asm!("out dx, al", in("dx") port, in("al") v, options(nomem, nostack, preserves_flags))
+    }
 }
 #[inline]
 unsafe fn inb(port: u16) -> u8 {
     let v: u8;
-    unsafe { asm!("in al, dx", out("al") v, in("dx") port, options(nomem, nostack, preserves_flags)) }
+    unsafe {
+        asm!("in al, dx", out("al") v, in("dx") port, options(nomem, nostack, preserves_flags))
+    }
     v
 }
 #[inline]
 unsafe fn inw(port: u16) -> u16 {
     let v: u16;
-    unsafe { asm!("in ax, dx", out("ax") v, in("dx") port, options(nomem, nostack, preserves_flags)) }
+    unsafe {
+        asm!("in ax, dx", out("ax") v, in("dx") port, options(nomem, nostack, preserves_flags))
+    }
     v
 }
 #[inline]
 unsafe fn outw(port: u16, v: u16) {
-    unsafe { asm!("out dx, ax", in("dx") port, in("ax") v, options(nomem, nostack, preserves_flags)) }
+    unsafe {
+        asm!("out dx, ax", in("dx") port, in("ax") v, options(nomem, nostack, preserves_flags))
+    }
 }
 
 pub struct AtaDrive {
@@ -76,7 +84,14 @@ impl AtaDrive {
     /// # Safety
     /// Performs raw port I/O; call once during boot with no concurrent access.
     pub unsafe fn probe(io: u16, ctl: u16, slave: bool) -> Option<AtaDrive> {
-        let mut d = AtaDrive { io, ctl, slave, lba48: false, sectors: 0, model: String::new() };
+        let mut d = AtaDrive {
+            io,
+            ctl,
+            slave,
+            lba48: false,
+            sectors: 0,
+            model: String::new(),
+        };
         unsafe {
             outb(ctl, 0x02); // nIEN: we poll, never raise IRQ14/15
             outb(io + REG_DRIVE, 0xA0 | ((slave as u8) << 4));
@@ -106,12 +121,11 @@ impl AtaDrive {
                 return None; // no LBA support
             }
             let lba28 = (w[60] as u64) | ((w[61] as u64) << 16);
-            let lba48_sectors =
-                (w[100] as u64) | ((w[101] as u64) << 16) | ((w[102] as u64) << 32) | ((w[103] as u64) << 48);
-            if w[83] & (1 << 14) != 0
-                && w[83] & (1 << 10) != 0
-                && lba48_sectors != 0
-            {
+            let lba48_sectors = (w[100] as u64)
+                | ((w[101] as u64) << 16)
+                | ((w[102] as u64) << 32)
+                | ((w[103] as u64) << 48);
+            if w[83] & (1 << 14) != 0 && w[83] & (1 << 10) != 0 && lba48_sectors != 0 {
                 d.lba48 = true;
                 d.sectors = lba48_sectors;
             } else {
@@ -150,7 +164,14 @@ impl AtaDrive {
         self.lba48
     }
     pub fn location(&self) -> (&'static str, &'static str) {
-        (if self.io == 0x1F0 { "primary" } else { "secondary" }, if self.slave { "slave" } else { "master" })
+        (
+            if self.io == 0x1F0 {
+                "primary"
+            } else {
+                "secondary"
+            },
+            if self.slave { "slave" } else { "master" },
+        )
     }
 
     // ---- low level helpers -------------------------------------------------
@@ -301,10 +322,17 @@ impl BlockDevice for AtaDrive {
             outb(self.io + REG_DRIVE, 0xE0 | ((self.slave as u8) << 4));
             self.delay();
             self.wait_not_busy()?;
-            outb(self.io + REG_STATUS, if self.lba48 { CMD_FLUSH48 } else { CMD_FLUSH28 });
+            outb(
+                self.io + REG_STATUS,
+                if self.lba48 { CMD_FLUSH48 } else { CMD_FLUSH28 },
+            );
         }
         self.delay();
         let st = self.wait_not_busy()?;
-        if st & (ST_ERR | ST_DF) != 0 { Err(BlockError::DeviceFault) } else { Ok(()) }
+        if st & (ST_ERR | ST_DF) != 0 {
+            Err(BlockError::DeviceFault)
+        } else {
+            Ok(())
+        }
     }
 }

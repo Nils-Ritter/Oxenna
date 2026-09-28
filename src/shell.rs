@@ -1,12 +1,14 @@
 extern crate alloc;
 
-use core::alloc::Layout;
 use alloc::{alloc::alloc, alloc::dealloc, string::String};
+use core::alloc::Layout;
 use spin::Mutex;
 
 #[cfg(feature = "userspace")]
 use crate::user;
 
+use crate::test::TestResult;
+use crate::test::test;
 use crate::{
     acpi,
     console::{self, Console, with_console},
@@ -15,19 +17,15 @@ use crate::{
     fs::{Entry, FS},
     kmem::{self, FRAME_ALLOCATOR},
 };
-use crate::test::TestResult;
-use crate::test::test;
 
 #[cfg(feature = "driver_qemu")]
 use crate::drivers::qemu::qemu_shutdown;
-
 
 /// Shell working directory, stored as a normalized absolute path.
 ///
 /// The ext2 wrapper currently resolves paths from ROOT_INO, so the shell
 /// resolves relative paths here before passing them to the filesystem.
 static CURRENT_DIR: Mutex<String> = Mutex::new(String::new());
-
 
 pub fn execute(line: &str) {
     let mut parts = line.split_whitespace();
@@ -130,7 +128,11 @@ fn run_binapp(command: &str, args: core::str::SplitWhitespace<'_>) {
             _ => match fs.stat(&with_ox) {
                 Ok(stat) if matches!(stat.file_type, crate::fs::FileType::Regular) => with_ox,
                 _ => {
-                    console_println_color!(Color::RED, "No command or binapp found for: {}", command);
+                    console_println_color!(
+                        Color::RED,
+                        "No command or binapp found for: {}",
+                        command
+                    );
                     return;
                 }
             },
@@ -143,7 +145,12 @@ fn run_binapp(command: &str, args: core::str::SplitWhitespace<'_>) {
 
     match user::exec(&path, &argv) {
         Ok(result) => {
-            console_println_color!(Color::GREEN, "{} exited with status {}", path, result.status);
+            console_println_color!(
+                Color::GREEN,
+                "{} exited with status {}",
+                path,
+                result.status
+            );
         }
         Err(e) => {
             console_println!("run: '{}': {:?}", path, e);
@@ -160,7 +167,11 @@ fn run(mut args: core::str::SplitWhitespace<'_>) {
 
     let path = absolute_path(program);
     if !path.ends_with(".ox") {
-        console_println_color!(Color::RED, "run: '{}' is not an Oxenna .ox executable", program);
+        console_println_color!(
+            Color::RED,
+            "run: '{}' is not an Oxenna .ox executable",
+            program
+        );
         return;
     }
 
@@ -170,7 +181,12 @@ fn run(mut args: core::str::SplitWhitespace<'_>) {
 
     match user::exec(&path, &argv) {
         Ok(result) => {
-            console_println_color!(Color::GREEN, "{} exited with status {}", path, result.status);
+            console_println_color!(
+                Color::GREEN,
+                "{} exited with status {}",
+                path,
+                result.status
+            );
         }
         Err(e) => {
             console_println!("run: '{}': {:?}", path, e);
@@ -371,14 +387,12 @@ fn cat(mut args: core::str::SplitWhitespace<'_>) {
     let path_abs = absolute_path(path);
 
     match FS.lock().read_file(&path_abs) {
-        Ok(data) => {
-            match core::str::from_utf8(&data) {
-                Ok(text) => console_print!("{}", text),
-                Err(_) => {
-                    console_println!("cat: '{}': binary file", path);
-                }
+        Ok(data) => match core::str::from_utf8(&data) {
+            Ok(text) => console_print!("{}", text),
+            Err(_) => {
+                console_println!("cat: '{}': binary file", path);
             }
-        }
+        },
         Err(e) => fs_error("cat", &path_abs, e),
     }
 }
@@ -451,7 +465,7 @@ fn echo(args: core::str::SplitWhitespace<'_>) {
     console_println!();
 }
 
-fn toggle_serial(){
+fn toggle_serial() {
     let state = console::serial_mirror_enabled();
     console::set_serial_mirror(!state);
     console_println_color!(Color::GREEN, "Toggled serial mirroring");
@@ -462,28 +476,27 @@ fn info() {
     console_println!("Architecture: x86_64");
     console_println!("Bootloader: Limine");
     console_println!("Framebuffer: {}x{}", fb::width(), fb::height());
-
 }
 
-fn panic(){
+fn panic() {
     panic!("Intentional debug panic");
 }
 
-fn bp(){
+fn bp() {
     x86_64::instructions::interrupts::int3();
 }
 
-fn sven(){
+fn sven() {
     console_println!("This command is dedicated to my friend bunny, sven!");
     console_println!("Say bye bye to your pc :)");
     acpi::reboot();
 }
 
-fn reboot(){
+fn reboot() {
     acpi::reboot();
 }
 
-pub fn shutdown(){
+pub fn shutdown() {
     console_println!("There currently is no support for acpi shutdown.");
     console_println!("However, qemu will close normally with the QEMU driver enabled.");
     #[cfg(feature = "driver_qemu")]
@@ -532,7 +545,7 @@ fn setfg(mut args: core::str::SplitWhitespace<'_>) {
     });
 }
 
-fn mem_analyze_cmd(){
+fn mem_analyze_cmd() {
     kmem::mem_analyze(FRAME_ALLOCATOR.lock().as_mut().unwrap());
 }
 
@@ -583,12 +596,7 @@ fn alloc_cmd(mut args: core::str::SplitWhitespace<'_>) {
         align,
         ptr as usize
     );
-    console_println!(
-        "To free: dealloc {:#x} {} {}",
-        ptr as usize,
-        size,
-        align
-    );
+    console_println!("To free: dealloc {:#x} {} {}", ptr as usize, size, align);
 }
 
 fn dealloc_cmd(mut args: core::str::SplitWhitespace<'_>) {
@@ -604,9 +612,7 @@ fn dealloc_cmd(mut args: core::str::SplitWhitespace<'_>) {
         return;
     };
 
-    let trimmed = ptr_str
-        .trim_start_matches("0x")
-        .trim_start_matches("0X");
+    let trimmed = ptr_str.trim_start_matches("0x").trim_start_matches("0X");
 
     let Ok(addr) = usize::from_str_radix(trimmed, 16) else {
         console_println!("Invalid pointer: {}", ptr_str);
@@ -675,13 +681,7 @@ macro_rules! color_test {
     ($test_name:ident, $setter:ident, $getter:path, $name:expr, $color:expr, $error:expr) => {
         #[test]
         fn $test_name() -> TestResult {
-            test_set_color(
-                $name,
-                $color,
-                $setter,
-                $getter,
-                $error,
-            )
+            test_set_color($name, $color, $setter, $getter, $error)
         }
     };
 }
@@ -775,5 +775,3 @@ color_test!(
     Color::WHITE,
     "set white failed"
 );
-
-

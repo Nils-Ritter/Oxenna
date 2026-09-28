@@ -1,17 +1,10 @@
-pub fn qemu_shutdown(
-    success: bool,
-) -> ! {
+pub fn qemu_shutdown(success: bool) -> ! {
     //
     // QEMU's isa-debug-exit device listens on
     // port 0xf4.
     //
 
-    let code: u32 =
-        if success {
-            0x10
-        } else {
-            0x11
-        };
+    let code: u32 = if success { 0x10 } else { 0x11 };
 
     unsafe {
         core::arch::asm!(

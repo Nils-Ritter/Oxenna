@@ -22,13 +22,12 @@ hardware framebuffer.
 
 use core::ptr;
 
+use crate::test::{TestResult, test};
 use limine::request::FramebufferRequest;
-use crate::test::{test, TestResult};
 
 #[used]
 #[unsafe(link_section = ".limine_reqs")]
-static FRAMEBUFFER_REQUEST: FramebufferRequest =
-    FramebufferRequest::new();
+static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
 const MAX_WIDTH: usize = 1920;
 const MAX_HEIGHT: usize = 1080;
@@ -36,8 +35,7 @@ const MAX_HEIGHT: usize = 1080;
 const BYTES_PER_PIXEL: usize = 4;
 const MAX_PIXELS: usize = MAX_WIDTH * MAX_HEIGHT;
 
-static mut BACKBUFFER: [u32; MAX_PIXELS] =
-    [0; MAX_PIXELS];
+static mut BACKBUFFER: [u32; MAX_PIXELS] = [0; MAX_PIXELS];
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Color {
@@ -47,11 +45,7 @@ pub struct Color {
 }
 
 impl Color {
-    pub const BLACK: Color = Color {
-        r: 0,
-        g: 0,
-        b: 0,
-    };
+    pub const BLACK: Color = Color { r: 0, g: 0, b: 0 };
 
     pub const WHITE: Color = Color {
         r: 255,
@@ -59,23 +53,11 @@ impl Color {
         b: 255,
     };
 
-    pub const RED: Color = Color {
-        r: 255,
-        g: 0,
-        b: 0,
-    };
+    pub const RED: Color = Color { r: 255, g: 0, b: 0 };
 
-    pub const GREEN: Color = Color {
-        r: 0,
-        g: 255,
-        b: 0,
-    };
+    pub const GREEN: Color = Color { r: 0, g: 255, b: 0 };
 
-    pub const BLUE: Color = Color {
-        r: 0,
-        g: 0,
-        b: 255,
-    };
+    pub const BLUE: Color = Color { r: 0, g: 0, b: 255 };
 
     pub fn from_name(name: &str) -> Option<Color> {
         match name {
@@ -134,10 +116,7 @@ pub fn init() {
         .response()
         .expect("No framebuffer response");
 
-    let framebuffer = response
-        .framebuffers()
-        .first()
-        .expect("No framebuffer");
+    let framebuffer = response.framebuffers().first().expect("No framebuffer");
 
     let width = framebuffer.width as usize;
     let height = framebuffer.height as usize;
@@ -207,12 +186,7 @@ Coordinates are clipped to the framebuffer.
 */
 
 #[inline(always)]
-fn mark_dirty(
-    x: usize,
-    y: usize,
-    width: usize,
-    height: usize,
-) {
+fn mark_dirty(x: usize, y: usize, width: usize, height: usize) {
     let info = info();
 
     if width == 0 || height == 0 {
@@ -223,13 +197,9 @@ fn mark_dirty(
         return;
     }
 
-    let max_x = x
-        .saturating_add(width)
-        .min(info.width);
+    let max_x = x.saturating_add(width).min(info.width);
 
-    let max_y = y
-        .saturating_add(height)
-        .min(info.height);
+    let max_y = y.saturating_add(height).min(info.height);
 
     if max_x <= x || max_y <= y {
         return;
@@ -270,11 +240,7 @@ fn color_to_u32(color: Color) -> u32 {
 // ============================================================
 
 #[inline(always)]
-pub fn put_pixel(
-    x: usize,
-    y: usize,
-    color: Color,
-) {
+pub fn put_pixel(x: usize, y: usize, color: Color) {
     let info = info();
 
     if x >= info.width || y >= info.height {
@@ -284,12 +250,9 @@ pub fn put_pixel(
     let pixel = color_to_u32(color);
 
     unsafe {
-        let back =
-            ptr::addr_of_mut!(BACKBUFFER) as *mut u32;
+        let back = ptr::addr_of_mut!(BACKBUFFER) as *mut u32;
 
-        *back.add(
-            y * info.width + x
-        ) = pixel;
+        *back.add(y * info.width + x) = pixel;
     }
 
     mark_dirty(x, y, 1, 1);
@@ -305,37 +268,21 @@ pub fn clear(color: Color) {
     let pixel = color_to_u32(color);
 
     unsafe {
-        let back =
-            ptr::addr_of_mut!(BACKBUFFER) as *mut u32;
+        let back = ptr::addr_of_mut!(BACKBUFFER) as *mut u32;
 
-        let buffer =
-            core::slice::from_raw_parts_mut(
-                back,
-                info.width * info.height,
-            );
+        let buffer = core::slice::from_raw_parts_mut(back, info.width * info.height);
 
         buffer.fill(pixel);
     }
 
-    mark_dirty(
-        0,
-        0,
-        info.width,
-        info.height,
-    );
+    mark_dirty(0, 0, info.width, info.height);
 }
 
 // ============================================================
 // Rectangle
 // ============================================================
 
-pub fn draw_rect(
-    x: usize,
-    y: usize,
-    width: usize,
-    height: usize,
-    color: Color,
-) {
+pub fn draw_rect(x: usize, y: usize, width: usize, height: usize, color: Color) {
     let info = info();
 
     if width == 0 || height == 0 {
@@ -346,13 +293,9 @@ pub fn draw_rect(
         return;
     }
 
-    let end_x = x
-        .saturating_add(width)
-        .min(info.width);
+    let end_x = x.saturating_add(width).min(info.width);
 
-    let end_y = y
-        .saturating_add(height)
-        .min(info.height);
+    let end_y = y.saturating_add(height).min(info.height);
 
     if end_x <= x || end_y <= y {
         return;
@@ -361,31 +304,18 @@ pub fn draw_rect(
     let pixel = color_to_u32(color);
 
     unsafe {
-        let back =
-            ptr::addr_of_mut!(BACKBUFFER) as *mut u32;
+        let back = ptr::addr_of_mut!(BACKBUFFER) as *mut u32;
 
         for py in y..end_y {
-            let row =
-                back.add(
-                    py * info.width + x
-                );
+            let row = back.add(py * info.width + x);
 
-            let row =
-                core::slice::from_raw_parts_mut(
-                    row,
-                    end_x - x,
-                );
+            let row = core::slice::from_raw_parts_mut(row, end_x - x);
 
             row.fill(pixel);
         }
     }
 
-    mark_dirty(
-        x,
-        y,
-        end_x - x,
-        end_y - y,
-    );
+    mark_dirty(x, y, end_x - x, end_y - y);
 }
 
 // ============================================================
@@ -415,85 +345,51 @@ pub fn copy_rect(
         return;
     }
 
-    if src_x >= info.width
-        || src_y >= info.height
-        || dst_x >= info.width
-        || dst_y >= info.height
-    {
+    if src_x >= info.width || src_y >= info.height || dst_x >= info.width || dst_y >= info.height {
         return;
     }
 
-    let width = width
-        .min(info.width - src_x)
-        .min(info.width - dst_x);
+    let width = width.min(info.width - src_x).min(info.width - dst_x);
 
-    let height = height
-        .min(info.height - src_y)
-        .min(info.height - dst_y);
+    let height = height.min(info.height - src_y).min(info.height - dst_y);
 
     if width == 0 || height == 0 {
         return;
     }
 
     unsafe {
-        let back =
-            ptr::addr_of_mut!(BACKBUFFER) as *mut u32;
+        let back = ptr::addr_of_mut!(BACKBUFFER) as *mut u32;
 
         /*
-         * When moving downward, copy from bottom to top.
+        * When moving downward, copy from bottom to top.
 
-         * When moving upward, copy from top to bottom.
+        * When moving upward, copy from top to bottom.
 
-         * ptr::copy() itself is overlap-safe, but choosing the
-         * natural direction also makes the intent explicit and
-         * avoids depending on implementation details of a loop.
-         */
+        * ptr::copy() itself is overlap-safe, but choosing the
+        * natural direction also makes the intent explicit and
+        * avoids depending on implementation details of a loop.
+        */
 
         if dst_y > src_y {
             for row in (0..height).rev() {
-                let src =
-                    back.add(
-                        (src_y + row) * info.width + src_x
-                    );
+                let src = back.add((src_y + row) * info.width + src_x);
 
-                let dst =
-                    back.add(
-                        (dst_y + row) * info.width + dst_x
-                    );
+                let dst = back.add((dst_y + row) * info.width + dst_x);
 
-                ptr::copy(
-                    src,
-                    dst,
-                    width,
-                );
+                ptr::copy(src, dst, width);
             }
         } else {
             for row in 0..height {
-                let src =
-                    back.add(
-                        (src_y + row) * info.width + src_x
-                    );
+                let src = back.add((src_y + row) * info.width + src_x);
 
-                let dst =
-                    back.add(
-                        (dst_y + row) * info.width + dst_x
-                    );
+                let dst = back.add((dst_y + row) * info.width + dst_x);
 
-                ptr::copy(
-                    src,
-                    dst,
-                    width,
-                );
+                ptr::copy(src, dst, width);
             }
         }
     }
 
-    mark_dirty(
-        dst_x,
-        dst_y,
-        width,
-        height,
-    );
+    mark_dirty(dst_x, dst_y, width, height);
 }
 
 // ============================================================
@@ -525,10 +421,7 @@ The operation only moves the backbuffer. The hardware
 framebuffer is updated later by present().
 */
 
-pub fn scroll_up(
-    pixels: usize,
-    color: Color,
-) {
+pub fn scroll_up(pixels: usize, color: Color) {
     let info = info();
 
     if pixels == 0 {
@@ -541,32 +434,19 @@ pub fn scroll_up(
     }
 
     /*
-     * Move the existing screen upward.
+    * Move the existing screen upward.
 
-         source:      pixels .. height
-         destination: 0      .. height - pixels
-     */
+        source:      pixels .. height
+        destination: 0      .. height - pixels
+    */
 
-    copy_rect(
-        0,
-        pixels,
-        0,
-        0,
-        info.width,
-        info.height - pixels,
-    );
+    copy_rect(0, pixels, 0, 0, info.width, info.height - pixels);
 
     /*
      * Clear the newly exposed bottom region.
      */
 
-    draw_rect(
-        0,
-        info.height - pixels,
-        info.width,
-        pixels,
-        color,
-    );
+    draw_rect(0, info.height - pixels, info.width, pixels, color);
 }
 
 // ============================================================
@@ -598,10 +478,7 @@ The operation only moves the backbuffer. The hardware
 framebuffer is updated later by present().
 */
 
-pub fn scroll_down(
-    pixels: usize,
-    color: Color,
-) {
+pub fn scroll_down(pixels: usize, color: Color) {
     let info = info();
 
     if pixels == 0 {
@@ -614,34 +491,21 @@ pub fn scroll_down(
     }
 
     /*
-     * Move the existing screen downward.
+    * Move the existing screen downward.
 
-         source:      0 .. height - pixels
-         destination: pixels .. height
+        source:      0 .. height - pixels
+        destination: pixels .. height
 
-     * copy_rect() handles the overlapping regions correctly.
-     */
+    * copy_rect() handles the overlapping regions correctly.
+    */
 
-    copy_rect(
-        0,
-        0,
-        0,
-        pixels,
-        info.width,
-        info.height - pixels,
-    );
+    copy_rect(0, 0, 0, pixels, info.width, info.height - pixels);
 
     /*
      * Clear the newly exposed top region.
      */
 
-    draw_rect(
-        0,
-        0,
-        info.width,
-        pixels,
-        color,
-    );
+    draw_rect(0, 0, info.width, pixels, color);
 }
 
 // ============================================================
@@ -680,22 +544,12 @@ This keeps expensive framebuffer writes out of IRQ context.
 pub fn present() {
     let info = info();
 
-    let (
-        min_x,
-        min_y,
-        max_x,
-        max_y,
-    ) = unsafe {
+    let (min_x, min_y, max_x, max_y) = unsafe {
         if !DIRTY {
             return;
         }
 
-        let result = (
-            DIRTY_MIN_X,
-            DIRTY_MIN_Y,
-            DIRTY_MAX_X,
-            DIRTY_MAX_Y,
-        );
+        let result = (DIRTY_MIN_X, DIRTY_MIN_Y, DIRTY_MAX_X, DIRTY_MAX_Y);
 
         DIRTY = false;
 
@@ -706,40 +560,21 @@ pub fn present() {
         return;
     }
 
-    let width =
-        max_x - min_x;
+    let width = max_x - min_x;
 
-    let row_size =
-        width * BYTES_PER_PIXEL;
+    let row_size = width * BYTES_PER_PIXEL;
 
     unsafe {
-        let back =
-            ptr::addr_of!(BACKBUFFER) as *const u8;
+        let back = ptr::addr_of!(BACKBUFFER) as *const u8;
 
-        let front =
-            info.front;
+        let front = info.front;
 
         for y in min_y..max_y {
-            let src =
-                back.add(
-                    y * info.width
-                        * BYTES_PER_PIXEL
-                        + min_x
-                            * BYTES_PER_PIXEL,
-                );
+            let src = back.add(y * info.width * BYTES_PER_PIXEL + min_x * BYTES_PER_PIXEL);
 
-            let dst =
-                front.add(
-                    y * info.front_pitch
-                        + min_x
-                            * BYTES_PER_PIXEL,
-                );
+            let dst = front.add(y * info.front_pitch + min_x * BYTES_PER_PIXEL);
 
-            ptr::copy_nonoverlapping(
-                src,
-                dst,
-                row_size,
-            );
+            ptr::copy_nonoverlapping(src, dst, row_size);
         }
     }
 }
@@ -752,12 +587,7 @@ pub fn present() {
 pub fn present_full() {
     let info = info();
 
-    mark_dirty(
-        0,
-        0,
-        info.width,
-        info.height,
-    );
+    mark_dirty(0, 0, info.width, info.height);
 
     present();
 }
@@ -790,10 +620,7 @@ pub fn pitch() -> usize {
 mod tests {
     use super::*;
 
-    use crate::test::{
-        test,
-        TestResult,
-    };
+    use crate::test::{TestResult, test};
 
     fn pass() -> TestResult {
         TestResult::Pass
@@ -804,63 +631,37 @@ mod tests {
     // --------------------------------------------------------
 
     #[inline]
-    fn read_pixel(
-        x: usize,
-        y: usize,
-    ) -> u32 {
+    fn read_pixel(x: usize, y: usize) -> u32 {
         let info = super::info();
 
         unsafe {
-            let back =
-                core::ptr::addr_of!(
-                    BACKBUFFER
-                ) as *const u32;
+            let back = core::ptr::addr_of!(BACKBUFFER) as *const u32;
 
-            *back.add(
-                y * info.width + x
-            )
+            *back.add(y * info.width + x)
         }
     }
 
     #[inline]
-    fn pixel_is(
-        x: usize,
-        y: usize,
-        color: Color,
-    ) -> bool {
-        read_pixel(x, y)
-            == super::color_to_u32(color)
+    fn pixel_is(x: usize, y: usize, color: Color) -> bool {
+        read_pixel(x, y) == super::color_to_u32(color)
     }
 
     #[allow(unused)]
-    fn fill_test_pattern(
-        width: usize,
-        height: usize,
-    ) {
-        let black =
-            color_to_u32(Color::BLACK);
+    fn fill_test_pattern(width: usize, height: usize) {
+        let black = color_to_u32(Color::BLACK);
 
         unsafe {
-            let back =
-                core::ptr::addr_of_mut!(
-                    BACKBUFFER
-                ) as *mut u32;
+            let back = core::ptr::addr_of_mut!(BACKBUFFER) as *mut u32;
 
             for y in 0..height {
                 for x in 0..width {
-                    let value =
-                        ((y as u32) << 16)
-                        | ((x as u32) & 0xffff);
+                    let value = ((y as u32) << 16) | ((x as u32) & 0xffff);
 
-                    back.add(
-                        y * super::info().width + x
-                    ).write(
-                        if value == 0 {
-                            black
-                        } else {
-                            value
-                        }
-                    );
+                    back.add(y * super::info().width + x).write(if value == 0 {
+                        black
+                    } else {
+                        value
+                    });
                 }
             }
         }
@@ -871,52 +672,37 @@ mod tests {
     // --------------------------------------------------------
 
     #[test]
-    fn framebuffer_has_valid_dimensions()
-        -> TestResult
-    {
+    fn framebuffer_has_valid_dimensions() -> TestResult {
         let width = width();
         let height = height();
 
         if width == 0 {
-            return TestResult::Fail(
-                "framebuffer width is zero",
-            );
+            return TestResult::Fail("framebuffer width is zero");
         }
 
         if height == 0 {
-            return TestResult::Fail(
-                "framebuffer height is zero",
-            );
+            return TestResult::Fail("framebuffer height is zero");
         }
 
         if width > MAX_WIDTH {
-            return TestResult::Fail(
-                "framebuffer exceeds maximum width",
-            );
+            return TestResult::Fail("framebuffer exceeds maximum width");
         }
 
         if height > MAX_HEIGHT {
-            return TestResult::Fail(
-                "framebuffer exceeds maximum height",
-            );
+            return TestResult::Fail("framebuffer exceeds maximum height");
         }
 
         pass()
     }
 
     #[test]
-    fn framebuffer_pitch_is_large_enough()
-        -> TestResult
-    {
+    fn framebuffer_pitch_is_large_enough() -> TestResult {
         let info = info();
 
-        let minimum =
-            info.width * BYTES_PER_PIXEL;
+        let minimum = info.width * BYTES_PER_PIXEL;
 
         if info.front_pitch < minimum {
-            return TestResult::Fail(
-                "framebuffer pitch is smaller than row size",
-            );
+            return TestResult::Fail("framebuffer pitch is smaller than row size");
         }
 
         pass()
@@ -927,59 +713,40 @@ mod tests {
     // --------------------------------------------------------
 
     #[test]
-    fn framebuffer_black_color_is_correct()
-        -> TestResult
-    {
+    fn framebuffer_black_color_is_correct() -> TestResult {
         if color_to_u32(Color::BLACK) != 0 {
-            return TestResult::Fail(
-                "black does not convert to zero",
-            );
+            return TestResult::Fail("black does not convert to zero");
         }
 
         pass()
     }
 
     #[test]
-    fn framebuffer_colors_have_distinct_values()
-        -> TestResult
-    {
-        let black =
-            color_to_u32(Color::BLACK);
+    fn framebuffer_colors_have_distinct_values() -> TestResult {
+        let black = color_to_u32(Color::BLACK);
 
-        let white =
-            color_to_u32(Color::WHITE);
+        let white = color_to_u32(Color::WHITE);
 
-        let red =
-            color_to_u32(Color::RED);
+        let red = color_to_u32(Color::RED);
 
-        let green =
-            color_to_u32(Color::GREEN);
+        let green = color_to_u32(Color::GREEN);
 
-        let blue =
-            color_to_u32(Color::BLUE);
+        let blue = color_to_u32(Color::BLUE);
 
         if black == white {
-            return TestResult::Fail(
-                "black and white have same pixel value",
-            );
+            return TestResult::Fail("black and white have same pixel value");
         }
 
         if red == green {
-            return TestResult::Fail(
-                "red and green have same pixel value",
-            );
+            return TestResult::Fail("red and green have same pixel value");
         }
 
         if red == blue {
-            return TestResult::Fail(
-                "red and blue have same pixel value",
-            );
+            return TestResult::Fail("red and blue have same pixel value");
         }
 
         if green == blue {
-            return TestResult::Fail(
-                "green and blue have same pixel value",
-            );
+            return TestResult::Fail("green and blue have same pixel value");
         }
 
         pass()
@@ -990,23 +757,15 @@ mod tests {
     // --------------------------------------------------------
 
     #[test]
-    fn framebuffer_clear_fills_entire_backbuffer()
-        -> TestResult
-    {
+    fn framebuffer_clear_fills_entire_backbuffer() -> TestResult {
         clear(Color::RED);
 
         let info = info();
 
         for y in 0..info.height {
             for x in 0..info.width {
-                if !pixel_is(
-                    x,
-                    y,
-                    Color::RED,
-                ) {
-                    return TestResult::Fail(
-                        "clear did not fill entire backbuffer",
-                    );
+                if !pixel_is(x, y, Color::RED) {
+                    return TestResult::Fail("clear did not fill entire backbuffer");
                 }
             }
         }
@@ -1015,9 +774,7 @@ mod tests {
     }
 
     #[test]
-    fn framebuffer_clear_black_works()
-        -> TestResult
-    {
+    fn framebuffer_clear_black_works() -> TestResult {
         clear(Color::BLACK);
 
         let info = info();
@@ -1026,25 +783,13 @@ mod tests {
             (0, 0),
             (info.width - 1, 0),
             (0, info.height - 1),
-            (
-                info.width - 1,
-                info.height - 1,
-            ),
-            (
-                info.width / 2,
-                info.height / 2,
-            ),
+            (info.width - 1, info.height - 1),
+            (info.width / 2, info.height / 2),
         ];
 
         for &(x, y) in &points {
-            if !pixel_is(
-                x,
-                y,
-                Color::BLACK,
-            ) {
-                return TestResult::Fail(
-                    "clear black left non-black pixels",
-                );
+            if !pixel_is(x, y, Color::BLACK) {
+                return TestResult::Fail("clear black left non-black pixels");
             }
         }
 
@@ -1056,64 +801,35 @@ mod tests {
     // --------------------------------------------------------
 
     #[test]
-    fn framebuffer_put_pixel_changes_exact_pixel()
-        -> TestResult
-    {
+    fn framebuffer_put_pixel_changes_exact_pixel() -> TestResult {
         clear(Color::BLACK);
 
         let x = 10;
         let y = 20;
 
-        put_pixel(
-            x,
-            y,
-            Color::RED,
-        );
+        put_pixel(x, y, Color::RED);
 
-        if !pixel_is(
-            x,
-            y,
-            Color::RED,
-        ) {
-            return TestResult::Fail(
-                "put_pixel did not change target pixel",
-            );
+        if !pixel_is(x, y, Color::RED) {
+            return TestResult::Fail("put_pixel did not change target pixel");
         }
 
         pass()
     }
 
     #[test]
-    fn framebuffer_put_pixel_does_not_change_neighbors()
-        -> TestResult
-    {
+    fn framebuffer_put_pixel_does_not_change_neighbors() -> TestResult {
         clear(Color::BLACK);
 
         let x = 10;
         let y = 20;
 
-        put_pixel(
-            x,
-            y,
-            Color::RED,
-        );
+        put_pixel(x, y, Color::RED);
 
-        let neighbors = [
-            (x - 1, y),
-            (x + 1, y),
-            (x, y - 1),
-            (x, y + 1),
-        ];
+        let neighbors = [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)];
 
         for &(nx, ny) in &neighbors {
-            if !pixel_is(
-                nx,
-                ny,
-                Color::BLACK,
-            ) {
-                return TestResult::Fail(
-                    "put_pixel modified neighboring pixel",
-                );
+            if !pixel_is(nx, ny, Color::BLACK) {
+                return TestResult::Fail("put_pixel modified neighboring pixel");
             }
         }
 
@@ -1121,30 +837,16 @@ mod tests {
     }
 
     #[test]
-    fn framebuffer_put_pixel_out_of_bounds_is_safe()
-        -> TestResult
-    {
+    fn framebuffer_put_pixel_out_of_bounds_is_safe() -> TestResult {
         clear(Color::BLACK);
 
         let info = info();
 
-        put_pixel(
-            info.width,
-            0,
-            Color::RED,
-        );
+        put_pixel(info.width, 0, Color::RED);
 
-        put_pixel(
-            0,
-            info.height,
-            Color::RED,
-        );
+        put_pixel(0, info.height, Color::RED);
 
-        put_pixel(
-            info.width + 100,
-            info.height + 100,
-            Color::RED,
-        );
+        put_pixel(info.width + 100, info.height + 100, Color::RED);
 
         pass()
     }
@@ -1154,29 +856,15 @@ mod tests {
     // --------------------------------------------------------
 
     #[test]
-    fn framebuffer_draw_rect_fills_rectangle()
-        -> TestResult
-    {
+    fn framebuffer_draw_rect_fills_rectangle() -> TestResult {
         clear(Color::BLACK);
 
-        draw_rect(
-            10,
-            20,
-            30,
-            40,
-            Color::GREEN,
-        );
+        draw_rect(10, 20, 30, 40, Color::GREEN);
 
         for y in 20..60 {
             for x in 10..40 {
-                if !pixel_is(
-                    x,
-                    y,
-                    Color::GREEN,
-                ) {
-                    return TestResult::Fail(
-                        "draw_rect failed to fill rectangle",
-                    );
+                if !pixel_is(x, y, Color::GREEN) {
+                    return TestResult::Fail("draw_rect failed to fill rectangle");
                 }
             }
         }
@@ -1185,36 +873,16 @@ mod tests {
     }
 
     #[test]
-    fn framebuffer_draw_rect_does_not_modify_outside()
-        -> TestResult
-    {
+    fn framebuffer_draw_rect_does_not_modify_outside() -> TestResult {
         clear(Color::BLACK);
 
-        draw_rect(
-            10,
-            20,
-            30,
-            40,
-            Color::GREEN,
-        );
+        draw_rect(10, 20, 30, 40, Color::GREEN);
 
-        let points = [
-            (9, 20),
-            (40, 20),
-            (10, 19),
-            (10, 60),
-            (0, 0),
-        ];
+        let points = [(9, 20), (40, 20), (10, 19), (10, 60), (0, 0)];
 
         for &(x, y) in &points {
-            if !pixel_is(
-                x,
-                y,
-                Color::BLACK,
-            ) {
-                return TestResult::Fail(
-                    "draw_rect modified outside rectangle",
-                );
+            if !pixel_is(x, y, Color::BLACK) {
+                return TestResult::Fail("draw_rect modified outside rectangle");
             }
         }
 
@@ -1222,30 +890,16 @@ mod tests {
     }
 
     #[test]
-    fn framebuffer_draw_rect_clips_right_edge()
-        -> TestResult
-    {
+    fn framebuffer_draw_rect_clips_right_edge() -> TestResult {
         clear(Color::BLACK);
 
         let info = info();
 
-        draw_rect(
-            info.width - 10,
-            0,
-            100,
-            10,
-            Color::BLUE,
-        );
+        draw_rect(info.width - 10, 0, 100, 10, Color::BLUE);
 
         for x in info.width - 10..info.width {
-            if !pixel_is(
-                x,
-                0,
-                Color::BLUE,
-            ) {
-                return TestResult::Fail(
-                    "rectangle was not clipped correctly",
-                );
+            if !pixel_is(x, 0, Color::BLUE) {
+                return TestResult::Fail("rectangle was not clipped correctly");
             }
         }
 
@@ -1253,30 +907,16 @@ mod tests {
     }
 
     #[test]
-    fn framebuffer_draw_rect_clips_bottom_edge()
-        -> TestResult
-    {
+    fn framebuffer_draw_rect_clips_bottom_edge() -> TestResult {
         clear(Color::BLACK);
 
         let info = info();
 
-        draw_rect(
-            0,
-            info.height - 10,
-            10,
-            100,
-            Color::BLUE,
-        );
+        draw_rect(0, info.height - 10, 10, 100, Color::BLUE);
 
         for y in info.height - 10..info.height {
-            if !pixel_is(
-                0,
-                y,
-                Color::BLUE,
-            ) {
-                return TestResult::Fail(
-                    "rectangle was not clipped at bottom edge",
-                );
+            if !pixel_is(0, y, Color::BLUE) {
+                return TestResult::Fail("rectangle was not clipped at bottom edge");
             }
         }
 
@@ -1284,35 +924,15 @@ mod tests {
     }
 
     #[test]
-    fn framebuffer_zero_sized_rect_does_nothing()
-        -> TestResult
-    {
+    fn framebuffer_zero_sized_rect_does_nothing() -> TestResult {
         clear(Color::BLACK);
 
-        draw_rect(
-            10,
-            10,
-            0,
-            100,
-            Color::RED,
-        );
+        draw_rect(10, 10, 0, 100, Color::RED);
 
-        draw_rect(
-            10,
-            10,
-            100,
-            0,
-            Color::RED,
-        );
+        draw_rect(10, 10, 100, 0, Color::RED);
 
-        if !pixel_is(
-            10,
-            10,
-            Color::BLACK,
-        ) {
-            return TestResult::Fail(
-                "zero-sized rectangle modified framebuffer",
-            );
+        if !pixel_is(10, 10, Color::BLACK) {
+            return TestResult::Fail("zero-sized rectangle modified framebuffer");
         }
 
         pass()
@@ -1323,148 +943,60 @@ mod tests {
     // --------------------------------------------------------
 
     #[test]
-    fn framebuffer_copy_rect_copies_pixels()
-        -> TestResult
-    {
+    fn framebuffer_copy_rect_copies_pixels() -> TestResult {
         clear(Color::BLACK);
 
-        put_pixel(
-            10,
-            10,
-            Color::RED,
-        );
+        put_pixel(10, 10, Color::RED);
 
-        put_pixel(
-            11,
-            10,
-            Color::GREEN,
-        );
+        put_pixel(11, 10, Color::GREEN);
 
-        put_pixel(
-            10,
-            11,
-            Color::BLUE,
-        );
+        put_pixel(10, 11, Color::BLUE);
 
-        put_pixel(
-            11,
-            11,
-            Color::WHITE,
-        );
+        put_pixel(11, 11, Color::WHITE);
 
-        copy_rect(
-            10,
-            10,
-            100,
-            100,
-            2,
-            2,
-        );
+        copy_rect(10, 10, 100, 100, 2, 2);
 
-        if !pixel_is(
-            100,
-            100,
-            Color::RED,
-        ) {
-            return TestResult::Fail(
-                "copy_rect failed first pixel",
-            );
+        if !pixel_is(100, 100, Color::RED) {
+            return TestResult::Fail("copy_rect failed first pixel");
         }
 
-        if !pixel_is(
-            101,
-            100,
-            Color::GREEN,
-        ) {
-            return TestResult::Fail(
-                "copy_rect failed second pixel",
-            );
+        if !pixel_is(101, 100, Color::GREEN) {
+            return TestResult::Fail("copy_rect failed second pixel");
         }
 
-        if !pixel_is(
-            100,
-            101,
-            Color::BLUE,
-        ) {
-            return TestResult::Fail(
-                "copy_rect failed third pixel",
-            );
+        if !pixel_is(100, 101, Color::BLUE) {
+            return TestResult::Fail("copy_rect failed third pixel");
         }
 
-        if !pixel_is(
-            101,
-            101,
-            Color::WHITE,
-        ) {
-            return TestResult::Fail(
-                "copy_rect failed fourth pixel",
-            );
+        if !pixel_is(101, 101, Color::WHITE) {
+            return TestResult::Fail("copy_rect failed fourth pixel");
         }
 
         pass()
     }
 
     #[test]
-    fn framebuffer_copy_rect_handles_horizontal_overlap()
-        -> TestResult
-    {
+    fn framebuffer_copy_rect_handles_horizontal_overlap() -> TestResult {
         clear(Color::BLACK);
 
-        put_pixel(
-            10,
-            10,
-            Color::RED,
-        );
+        put_pixel(10, 10, Color::RED);
 
-        put_pixel(
-            11,
-            10,
-            Color::GREEN,
-        );
+        put_pixel(11, 10, Color::GREEN);
 
-        put_pixel(
-            12,
-            10,
-            Color::BLUE,
-        );
+        put_pixel(12, 10, Color::BLUE);
 
-        copy_rect(
-            10,
-            10,
-            11,
-            10,
-            3,
-            1,
-        );
+        copy_rect(10, 10, 11, 10, 3, 1);
 
-        if !pixel_is(
-            11,
-            10,
-            Color::RED,
-        ) {
-            return TestResult::Fail(
-                "overlapping copy corrupted first pixel",
-            );
+        if !pixel_is(11, 10, Color::RED) {
+            return TestResult::Fail("overlapping copy corrupted first pixel");
         }
 
-        if !pixel_is(
-            12,
-            10,
-            Color::GREEN,
-        ) {
-            return TestResult::Fail(
-                "overlapping copy corrupted second pixel",
-            );
+        if !pixel_is(12, 10, Color::GREEN) {
+            return TestResult::Fail("overlapping copy corrupted second pixel");
         }
 
-        if !pixel_is(
-            13,
-            10,
-            Color::BLUE,
-        ) {
-            return TestResult::Fail(
-                "overlapping copy corrupted third pixel",
-            );
+        if !pixel_is(13, 10, Color::BLUE) {
+            return TestResult::Fail("overlapping copy corrupted third pixel");
         }
 
         pass()
@@ -1475,86 +1007,33 @@ mod tests {
     // --------------------------------------------------------
 
     #[test]
-    fn framebuffer_scroll_moves_pixels_up()
-        -> TestResult
-    {
+    fn framebuffer_scroll_moves_pixels_up() -> TestResult {
         clear(Color::BLACK);
 
-        draw_rect(
-            0,
-            0,
-            10,
-            10,
-            Color::RED,
-        );
+        draw_rect(0, 0, 10, 10, Color::RED);
 
-        draw_rect(
-            0,
-            10,
-            10,
-            10,
-            Color::GREEN,
-        );
+        draw_rect(0, 10, 10, 10, Color::GREEN);
 
-        draw_rect(
-            0,
-            20,
-            10,
-            10,
-            Color::BLUE,
-        );
+        draw_rect(0, 20, 10, 10, Color::BLUE);
 
-        draw_rect(
-            0,
-            30,
-            10,
-            10,
-            Color::WHITE,
-        );
+        draw_rect(0, 30, 10, 10, Color::WHITE);
 
-        scroll_up(
-            10,
-            Color::BLACK,
-        );
+        scroll_up(10, Color::BLACK);
 
-        if !pixel_is(
-            0,
-            0,
-            Color::GREEN,
-        ) {
-            return TestResult::Fail(
-                "scroll did not move second row upward",
-            );
+        if !pixel_is(0, 0, Color::GREEN) {
+            return TestResult::Fail("scroll did not move second row upward");
         }
 
-        if !pixel_is(
-            0,
-            10,
-            Color::BLUE,
-        ) {
-            return TestResult::Fail(
-                "scroll did not move third row upward",
-            );
+        if !pixel_is(0, 10, Color::BLUE) {
+            return TestResult::Fail("scroll did not move third row upward");
         }
 
-        if !pixel_is(
-            0,
-            20,
-            Color::WHITE,
-        ) {
-            return TestResult::Fail(
-                "scroll did not move fourth row upward",
-            );
+        if !pixel_is(0, 20, Color::WHITE) {
+            return TestResult::Fail("scroll did not move fourth row upward");
         }
 
-        if !pixel_is(
-            0,
-            30,
-            Color::BLACK,
-        ) {
-            return TestResult::Fail(
-                "scroll did not clear exposed bottom area",
-            );
+        if !pixel_is(0, 30, Color::BLACK) {
+            return TestResult::Fail("scroll did not clear exposed bottom area");
         }
 
         pass()
@@ -1565,253 +1044,128 @@ mod tests {
     // --------------------------------------------------------
 
     #[test]
-    fn framebuffer_scroll_down_moves_pixels_down()
-        -> TestResult
-    {
+    fn framebuffer_scroll_down_moves_pixels_down() -> TestResult {
         clear(Color::BLACK);
 
         /*
-         * Four horizontal bands:
+        * Four horizontal bands:
 
-             RED
-             GREEN
-             BLUE
-             WHITE
-         */
+            RED
+            GREEN
+            BLUE
+            WHITE
+        */
 
-        draw_rect(
-            0,
-            0,
-            10,
-            10,
-            Color::RED,
-        );
+        draw_rect(0, 0, 10, 10, Color::RED);
 
-        draw_rect(
-            0,
-            10,
-            10,
-            10,
-            Color::GREEN,
-        );
+        draw_rect(0, 10, 10, 10, Color::GREEN);
 
-        draw_rect(
-            0,
-            20,
-            10,
-            10,
-            Color::BLUE,
-        );
+        draw_rect(0, 20, 10, 10, Color::BLUE);
 
-        draw_rect(
-            0,
-            30,
-            10,
-            10,
-            Color::WHITE,
-        );
+        draw_rect(0, 30, 10, 10, Color::WHITE);
 
-        scroll_down(
-            10,
-            Color::BLACK,
-        );
+        scroll_down(10, Color::BLACK);
 
         /*
-         * Expected:
+        * Expected:
 
-             BLACK
-             RED
-             GREEN
-             BLUE
-         */
+            BLACK
+            RED
+            GREEN
+            BLUE
+        */
 
-        if !pixel_is(
-            0,
-            0,
-            Color::BLACK,
-        ) {
-            return TestResult::Fail(
-                "scroll_down did not clear exposed top area",
-            );
+        if !pixel_is(0, 0, Color::BLACK) {
+            return TestResult::Fail("scroll_down did not clear exposed top area");
         }
 
-        if !pixel_is(
-            0,
-            10,
-            Color::RED,
-        ) {
-            return TestResult::Fail(
-                "scroll_down did not move first row downward",
-            );
+        if !pixel_is(0, 10, Color::RED) {
+            return TestResult::Fail("scroll_down did not move first row downward");
         }
 
-        if !pixel_is(
-            0,
-            20,
-            Color::GREEN,
-        ) {
-            return TestResult::Fail(
-                "scroll_down did not move second row downward",
-            );
+        if !pixel_is(0, 20, Color::GREEN) {
+            return TestResult::Fail("scroll_down did not move second row downward");
         }
 
-        if !pixel_is(
-            0,
-            30,
-            Color::BLUE,
-        ) {
-            return TestResult::Fail(
-                "scroll_down did not move third row downward",
-            );
+        if !pixel_is(0, 30, Color::BLUE) {
+            return TestResult::Fail("scroll_down did not move third row downward");
         }
 
         pass()
     }
 
     #[test]
-    fn framebuffer_scroll_down_handles_large_scroll()
-        -> TestResult
-    {
+    fn framebuffer_scroll_down_handles_large_scroll() -> TestResult {
         clear(Color::RED);
 
         let info = info();
 
-        scroll_down(
-            info.height,
-            Color::BLACK,
-        );
+        scroll_down(info.height, Color::BLACK);
 
-        if !pixel_is(
-            0,
-            0,
-            Color::BLACK,
-        ) {
-            return TestResult::Fail(
-                "full downward scroll did not clear screen",
-            );
+        if !pixel_is(0, 0, Color::BLACK) {
+            return TestResult::Fail("full downward scroll did not clear screen");
         }
 
-        if !pixel_is(
-            info.width - 1,
-            info.height - 1,
-            Color::BLACK,
-        ) {
-            return TestResult::Fail(
-                "full downward scroll left pixels behind",
-            );
+        if !pixel_is(info.width - 1, info.height - 1, Color::BLACK) {
+            return TestResult::Fail("full downward scroll left pixels behind");
         }
 
         pass()
     }
 
     #[test]
-    fn framebuffer_scroll_down_by_zero_does_nothing()
-        -> TestResult
-    {
+    fn framebuffer_scroll_down_by_zero_does_nothing() -> TestResult {
         clear(Color::RED);
 
-        scroll_down(
-            0,
-            Color::BLACK,
-        );
+        scroll_down(0, Color::BLACK);
 
-        if !pixel_is(
-            0,
-            0,
-            Color::RED,
-        ) {
-            return TestResult::Fail(
-                "zero-pixel downward scroll modified framebuffer",
-            );
+        if !pixel_is(0, 0, Color::RED) {
+            return TestResult::Fail("zero-pixel downward scroll modified framebuffer");
         }
 
         pass()
     }
 
     #[test]
-    fn framebuffer_scroll_up_then_down_restores_original_area()
-        -> TestResult
-    {
+    fn framebuffer_scroll_up_then_down_restores_original_area() -> TestResult {
         clear(Color::BLACK);
 
-        draw_rect(
-            0,
-            0,
-            10,
-            10,
-            Color::RED,
-        );
+        draw_rect(0, 0, 10, 10, Color::RED);
 
-        draw_rect(
-            0,
-            10,
-            10,
-            10,
-            Color::GREEN,
-        );
+        draw_rect(0, 10, 10, 10, Color::GREEN);
 
-        draw_rect(
-            0,
-            20,
-            10,
-            10,
-            Color::BLUE,
-        );
+        draw_rect(0, 20, 10, 10, Color::BLUE);
 
         /*
-         * Scroll upward by one row.
+        * Scroll upward by one row.
 
-             GREEN
-             BLUE
-             BLACK
-         */
+            GREEN
+            BLUE
+            BLACK
+        */
 
-        scroll_up(
-            10,
-            Color::BLACK,
-        );
+        scroll_up(10, Color::BLACK);
 
         /*
-         * Scroll downward by one row.
+        * Scroll downward by one row.
 
-             BLACK
-             GREEN
-             BLUE
-         */
+            BLACK
+            GREEN
+            BLUE
+        */
 
-        scroll_down(
-            10,
-            Color::BLACK,
-        );
+        scroll_down(10, Color::BLACK);
 
-        if !pixel_is(
-            0,
-            0,
-            Color::BLACK,
-        ) {
-            return TestResult::Fail(
-                "round-trip scroll did not clear top area",
-            );
+        if !pixel_is(0, 0, Color::BLACK) {
+            return TestResult::Fail("round-trip scroll did not clear top area");
         }
 
-        if !pixel_is(
-            0,
-            10,
-            Color::GREEN,
-        ) {
-            return TestResult::Fail(
-                "round-trip scroll lost middle row",
-            );
+        if !pixel_is(0, 10, Color::GREEN) {
+            return TestResult::Fail("round-trip scroll lost middle row");
         }
 
-        if !pixel_is(
-            0,
-            20,
-            Color::BLUE,
-        ) {
-            return TestResult::Fail(
-                "round-trip scroll lost bottom row",
-            );
+        if !pixel_is(0, 20, Color::BLUE) {
+            return TestResult::Fail("round-trip scroll lost bottom row");
         }
 
         pass()
@@ -1822,44 +1176,28 @@ mod tests {
     // --------------------------------------------------------
 
     #[test]
-    fn framebuffer_draw_operations_mark_dirty()
-        -> TestResult
-    {
+    fn framebuffer_draw_operations_mark_dirty() -> TestResult {
         clear(Color::BLACK);
 
         unsafe {
             DIRTY = false;
         }
 
-        put_pixel(
-            50,
-            60,
-            Color::RED,
-        );
+        put_pixel(50, 60, Color::RED);
 
         unsafe {
             if !DIRTY {
-                return TestResult::Fail(
-                    "put_pixel did not mark framebuffer dirty",
-                );
+                return TestResult::Fail("put_pixel did not mark framebuffer dirty");
             }
 
             DIRTY = false;
         }
 
-        draw_rect(
-            100,
-            100,
-            20,
-            20,
-            Color::GREEN,
-        );
+        draw_rect(100, 100, 20, 20, Color::GREEN);
 
         unsafe {
             if !DIRTY {
-                return TestResult::Fail(
-                    "draw_rect did not mark framebuffer dirty",
-                );
+                return TestResult::Fail("draw_rect did not mark framebuffer dirty");
             }
 
             DIRTY = false;
@@ -1869,49 +1207,34 @@ mod tests {
     }
 
     #[test]
-    fn framebuffer_scroll_down_marks_entire_affected_area_dirty()
-        -> TestResult
-    {
+    fn framebuffer_scroll_down_marks_entire_affected_area_dirty() -> TestResult {
         clear(Color::BLACK);
 
         unsafe {
             DIRTY = false;
         }
 
-        scroll_down(
-            10,
-            Color::WHITE,
-        );
+        scroll_down(10, Color::WHITE);
 
         unsafe {
             if !DIRTY {
-                return TestResult::Fail(
-                    "scroll_down did not mark framebuffer dirty",
-                );
+                return TestResult::Fail("scroll_down did not mark framebuffer dirty");
             }
 
             if DIRTY_MIN_X != 0 {
-                return TestResult::Fail(
-                    "scroll_down dirty minimum X is incorrect",
-                );
+                return TestResult::Fail("scroll_down dirty minimum X is incorrect");
             }
 
             if DIRTY_MIN_Y != 0 {
-                return TestResult::Fail(
-                    "scroll_down dirty minimum Y is incorrect",
-                );
+                return TestResult::Fail("scroll_down dirty minimum Y is incorrect");
             }
 
             if DIRTY_MAX_X != info().width {
-                return TestResult::Fail(
-                    "scroll_down dirty maximum X is incorrect",
-                );
+                return TestResult::Fail("scroll_down dirty maximum X is incorrect");
             }
 
             if DIRTY_MAX_Y != info().height {
-                return TestResult::Fail(
-                    "scroll_down dirty maximum Y is incorrect",
-                );
+                return TestResult::Fail("scroll_down dirty maximum Y is incorrect");
             }
 
             DIRTY = false;
@@ -1921,49 +1244,34 @@ mod tests {
     }
 
     #[test]
-    fn framebuffer_scroll_up_marks_entire_affected_area_dirty()
-        -> TestResult
-    {
+    fn framebuffer_scroll_up_marks_entire_affected_area_dirty() -> TestResult {
         clear(Color::BLACK);
 
         unsafe {
             DIRTY = false;
         }
 
-        scroll_up(
-            10,
-            Color::WHITE,
-        );
+        scroll_up(10, Color::WHITE);
 
         unsafe {
             if !DIRTY {
-                return TestResult::Fail(
-                    "scroll_up did not mark framebuffer dirty",
-                );
+                return TestResult::Fail("scroll_up did not mark framebuffer dirty");
             }
 
             if DIRTY_MIN_X != 0 {
-                return TestResult::Fail(
-                    "scroll_up dirty minimum X is incorrect",
-                );
+                return TestResult::Fail("scroll_up dirty minimum X is incorrect");
             }
 
             if DIRTY_MIN_Y != 0 {
-                return TestResult::Fail(
-                    "scroll_up dirty minimum Y is incorrect",
-                );
+                return TestResult::Fail("scroll_up dirty minimum Y is incorrect");
             }
 
             if DIRTY_MAX_X != info().width {
-                return TestResult::Fail(
-                    "scroll_up dirty maximum X is incorrect",
-                );
+                return TestResult::Fail("scroll_up dirty maximum X is incorrect");
             }
 
             if DIRTY_MAX_Y != info().height {
-                return TestResult::Fail(
-                    "scroll_up dirty maximum Y is incorrect",
-                );
+                return TestResult::Fail("scroll_up dirty maximum Y is incorrect");
             }
 
             DIRTY = false;
@@ -1973,60 +1281,36 @@ mod tests {
     }
 
     #[test]
-    fn framebuffer_dirty_rectangle_expands()
-        -> TestResult
-    {
+    fn framebuffer_dirty_rectangle_expands() -> TestResult {
         clear(Color::BLACK);
 
         unsafe {
             DIRTY = false;
         }
 
-        draw_rect(
-            100,
-            200,
-            10,
-            20,
-            Color::RED,
-        );
+        draw_rect(100, 200, 10, 20, Color::RED);
 
-        draw_rect(
-            50,
-            150,
-            30,
-            40,
-            Color::GREEN,
-        );
+        draw_rect(50, 150, 30, 40, Color::GREEN);
 
         unsafe {
             if !DIRTY {
-                return TestResult::Fail(
-                    "dirty flag was not set",
-                );
+                return TestResult::Fail("dirty flag was not set");
             }
 
             if DIRTY_MIN_X != 50 {
-                return TestResult::Fail(
-                    "dirty minimum X is incorrect",
-                );
+                return TestResult::Fail("dirty minimum X is incorrect");
             }
 
             if DIRTY_MIN_Y != 150 {
-                return TestResult::Fail(
-                    "dirty minimum Y is incorrect",
-                );
+                return TestResult::Fail("dirty minimum Y is incorrect");
             }
 
             if DIRTY_MAX_X != 110 {
-                return TestResult::Fail(
-                    "dirty maximum X is incorrect",
-                );
+                return TestResult::Fail("dirty maximum X is incorrect");
             }
 
             if DIRTY_MAX_Y != 220 {
-                return TestResult::Fail(
-                    "dirty maximum Y is incorrect",
-                );
+                return TestResult::Fail("dirty maximum Y is incorrect");
             }
 
             DIRTY = false;
@@ -2036,22 +1320,14 @@ mod tests {
     }
 
     #[test]
-    fn framebuffer_present_clears_dirty_state()
-        -> TestResult
-    {
+    fn framebuffer_present_clears_dirty_state() -> TestResult {
         clear(Color::BLACK);
 
-        put_pixel(
-            20,
-            20,
-            Color::RED,
-        );
+        put_pixel(20, 20, Color::RED);
 
         unsafe {
             if !DIRTY {
-                return TestResult::Fail(
-                    "test setup did not mark dirty",
-                );
+                return TestResult::Fail("test setup did not mark dirty");
             }
         }
 
@@ -2059,9 +1335,7 @@ mod tests {
 
         unsafe {
             if DIRTY {
-                return TestResult::Fail(
-                    "present did not clear dirty state",
-                );
+                return TestResult::Fail("present did not clear dirty state");
             }
         }
 
@@ -2073,23 +1347,15 @@ mod tests {
     // --------------------------------------------------------
 
     #[test]
-    fn framebuffer_repeated_clear_is_stable()
-        -> TestResult
-    {
+    fn framebuffer_repeated_clear_is_stable() -> TestResult {
         for _ in 0..10 {
             clear(Color::BLACK);
             clear(Color::WHITE);
             clear(Color::BLACK);
         }
 
-        if !pixel_is(
-            0,
-            0,
-            Color::BLACK,
-        ) {
-            return TestResult::Fail(
-                "repeated clear produced incorrect result",
-            );
+        if !pixel_is(0, 0, Color::BLACK) {
+            return TestResult::Fail("repeated clear produced incorrect result");
         }
 
         pass()

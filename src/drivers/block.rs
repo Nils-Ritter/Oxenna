@@ -50,7 +50,9 @@ pub struct RamDisk {
 
 impl RamDisk {
     pub fn new(sectors: usize) -> Self {
-        Self { data: alloc::vec![0u8; sectors * SECTOR_SIZE] }
+        Self {
+            data: alloc::vec![0u8; sectors * SECTOR_SIZE],
+        }
     }
     pub fn as_bytes(&self) -> &[u8] {
         &self.data
@@ -59,7 +61,9 @@ impl RamDisk {
         if len % SECTOR_SIZE != 0 {
             return Err(BlockError::BadBuffer);
         }
-        let start = (lba as usize).checked_mul(SECTOR_SIZE).ok_or(BlockError::OutOfRange)?;
+        let start = (lba as usize)
+            .checked_mul(SECTOR_SIZE)
+            .ok_or(BlockError::OutOfRange)?;
         let end = start.checked_add(len).ok_or(BlockError::OutOfRange)?;
         if end > self.data.len() {
             return Err(BlockError::OutOfRange);

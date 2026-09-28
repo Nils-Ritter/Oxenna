@@ -20,7 +20,7 @@ use x86_64::{
 };
 
 use crate::{
-    elf::{Elf64, ElfError, ET_DYN, PF_W, PF_X},
+    elf::{ET_DYN, Elf64, ElfError, PF_W, PF_X},
     fs::FS,
     gdt,
     kmem::{FRAME_ALLOCATOR, MAPPER},
@@ -93,8 +93,13 @@ pub fn exec(path: &str, argv: &[&str]) -> Result<ExecResult, UserError> {
     let mut specs: Vec<PageSpec> = Vec::new();
 
     for ph in headers.iter().copied() {
-        let start = ph.vaddr.checked_add(load_bias).ok_or(UserError::InvalidAddress)?;
-        let end = start.checked_add(ph.memsz).ok_or(UserError::InvalidAddress)?;
+        let start = ph
+            .vaddr
+            .checked_add(load_bias)
+            .ok_or(UserError::InvalidAddress)?;
+        let end = start
+            .checked_add(ph.memsz)
+            .ok_or(UserError::InvalidAddress)?;
         if start >= USER_MAX || end > USER_MAX || end <= start {
             return Err(UserError::InvalidAddress);
         }
@@ -130,7 +135,8 @@ pub fn exec(path: &str, argv: &[&str]) -> Result<ExecResult, UserError> {
         .ok_or(UserError::StackOverflow)?;
 
     for i in 0..USER_STACK_PAGES {
-        let page: Page<Size4KiB> = Page::containing_address(VirtAddr::new(stack_first + i * PAGE_SIZE));
+        let page: Page<Size4KiB> =
+            Page::containing_address(VirtAddr::new(stack_first + i * PAGE_SIZE));
         if specs.iter().any(|s| s.page == page) {
             return Err(UserError::InvalidAddress);
         }
@@ -155,10 +161,10 @@ pub fn exec(path: &str, argv: &[&str]) -> Result<ExecResult, UserError> {
             }
 
             let frame = allocator.allocate_frame().ok_or(UserError::OutOfMemory)?;
-            let dst = unsafe {
-                crate::kmem::phys_to_ptr::<u8>(frame.start_address().as_u64())
-            };
-            unsafe { core::ptr::write_bytes(dst, 0, PAGE_SIZE as usize); }
+            let dst = unsafe { crate::kmem::phys_to_ptr::<u8>(frame.start_address().as_u64()) };
+            unsafe {
+                core::ptr::write_bytes(dst, 0, PAGE_SIZE as usize);
+            }
 
             unsafe {
                 if let Err(e) = mapper.map_to(spec.page, frame, spec.flags, allocator) {
@@ -167,19 +173,19 @@ pub fn exec(path: &str, argv: &[&str]) -> Result<ExecResult, UserError> {
                         spec.page.start_address().as_u64(),
                         e
                     );
-                    unsafe { allocator.deallocate_frame(frame); }
+                    unsafe {
+                        allocator.deallocate_frame(frame);
+                    }
                     return Err(UserError::Mapping);
                 }
-                mapper
-                    .translate_page(spec.page)
-                    .map_err(|e| {
-                        serial_println!(
-                            "ELF: mapped page {:#x} cannot be translated: {:?}",
-                            spec.page.start_address().as_u64(),
-                            e
-                        );
-                        UserError::Mapping
-                    })?;
+                mapper.translate_page(spec.page).map_err(|e| {
+                    serial_println!(
+                        "ELF: mapped page {:#x} cannot be translated: {:?}",
+                        spec.page.start_address().as_u64(),
+                        e
+                    );
+                    UserError::Mapping
+                })?;
             }
 
             PROCESS_PAGES.lock().push(spec.page);
@@ -203,9 +209,7 @@ pub fn exec(path: &str, argv: &[&str]) -> Result<ExecResult, UserError> {
                 let page_off = (va & 0xfff) as usize;
                 let n = core::cmp::min(4096 - page_off, src.len() - copied);
 
-                let dst = unsafe {
-                    crate::kmem::phys_to_ptr::<u8>(phys).add(page_off)
-                };
+                let dst = unsafe { crate::kmem::phys_to_ptr::<u8>(phys).add(page_off) };
                 unsafe {
                     core::ptr::copy_nonoverlapping(src.as_ptr().add(copied), dst, n);
                 }
@@ -238,13 +242,11 @@ pub fn exec(path: &str, argv: &[&str]) -> Result<ExecResult, UserError> {
 
     for arg in all_args.iter().rev() {
         let bytes = arg.as_bytes();
-        sp = sp.checked_sub(bytes.len() + 1).ok_or(UserError::StackOverflow)?;
+        sp = sp
+            .checked_sub(bytes.len() + 1)
+            .ok_or(UserError::StackOverflow)?;
         unsafe {
-            core::ptr::copy_nonoverlapping(
-                bytes.as_ptr(),
-                sp as *mut u8,
-                bytes.len(),
-            );
+            core::ptr::copy_nonoverlapping(bytes.as_ptr(), sp as *mut u8, bytes.len());
             (sp as *mut u8).add(bytes.len()).write(0);
         }
         arg_ptrs.push(sp as u64);
@@ -256,20 +258,31 @@ pub fn exec(path: &str, argv: &[&str]) -> Result<ExecResult, UserError> {
 
     // [argc][argv[0]..argv[argc-1]][NULL][envp[0]=NULL]
     sp = sp.checked_sub(8).ok_or(UserError::StackOverflow)?;
-    unsafe { (sp as *mut u64).write(0); } // envp[0]
+    unsafe {
+        (sp as *mut u64).write(0);
+    } // envp[0]
 
     sp = sp.checked_sub(8).ok_or(UserError::StackOverflow)?;
-    unsafe { (sp as *mut u64).write(0); } // argv[argc]
+    unsafe {
+        (sp as *mut u64).write(0);
+    } // argv[argc]
 
     for ptr in arg_ptrs.iter().rev() {
         sp = sp.checked_sub(8).ok_or(UserError::StackOverflow)?;
-        unsafe { (sp as *mut u64).write(*ptr); }
+        unsafe {
+            (sp as *mut u64).write(*ptr);
+        }
     }
 
     sp = sp.checked_sub(8).ok_or(UserError::StackOverflow)?;
-    unsafe { (sp as *mut u64).write(all_args.len() as u64); }
+    unsafe {
+        (sp as *mut u64).write(all_args.len() as u64);
+    }
 
-    let entry = elf.entry.checked_add(load_bias).ok_or(UserError::InvalidAddress)?;
+    let entry = elf
+        .entry
+        .checked_add(load_bias)
+        .ok_or(UserError::InvalidAddress)?;
     if !specs.iter().any(|s| {
         let start = s.page.start_address().as_u64();
         entry >= start && entry < start + PAGE_SIZE
@@ -278,17 +291,22 @@ pub fn exec(path: &str, argv: &[&str]) -> Result<ExecResult, UserError> {
         return Err(UserError::InvalidAddress);
     }
 
-    unsafe { EXIT_REQUESTED = 0; }
-    unsafe { EXEC_RETURN_RSP = 0; }
+    unsafe {
+        EXIT_REQUESTED = 0;
+    }
+    unsafe {
+        EXEC_RETURN_RSP = 0;
+    }
 
     let status = enter_user_and_wait(entry, sp as u64).map_err(|_| UserError::Enter)?;
 
     cleanup_process();
-    unsafe { EXIT_REQUESTED = 0; }
+    unsafe {
+        EXIT_REQUESTED = 0;
+    }
 
     Ok(ExecResult { status })
 }
-
 
 /// Boot a legacy init program when the interactive shell is disabled.
 pub fn run_init() -> ! {
@@ -299,7 +317,12 @@ pub fn run_init() -> ! {
 }
 
 /// Map anonymous userspace memory for brk/mmap.
-pub fn map_anonymous(start: u64, len: u64, writable: bool, executable: bool) -> Result<u64, UserError> {
+pub fn map_anonymous(
+    start: u64,
+    len: u64,
+    writable: bool,
+    executable: bool,
+) -> Result<u64, UserError> {
     if len == 0 {
         return Ok(start);
     }
@@ -323,14 +346,18 @@ pub fn map_anonymous(start: u64, len: u64, writable: bool, executable: bool) -> 
         }
 
         let frame = allocator.allocate_frame().ok_or(UserError::OutOfMemory)?;
-        let ptr = unsafe {
-            crate::kmem::phys_to_ptr::<u8>(frame.start_address().as_u64())
-        };
-        unsafe { core::ptr::write_bytes(ptr, 0, 4096); }
+        let ptr = unsafe { crate::kmem::phys_to_ptr::<u8>(frame.start_address().as_u64()) };
+        unsafe {
+            core::ptr::write_bytes(ptr, 0, 4096);
+        }
 
         let mut flags = PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE;
-        if writable { flags |= PageTableFlags::WRITABLE; }
-        if !executable { flags |= PageTableFlags::NO_EXECUTE; }
+        if writable {
+            flags |= PageTableFlags::WRITABLE;
+        }
+        if !executable {
+            flags |= PageTableFlags::NO_EXECUTE;
+        }
 
         unsafe {
             mapper
@@ -378,8 +405,12 @@ pub fn mprotect(start: u64, len: u64, writable: bool, executable: bool) -> Resul
         }
 
         let mut flags = PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE;
-        if writable { flags |= PageTableFlags::WRITABLE; }
-        if !executable { flags |= PageTableFlags::NO_EXECUTE; }
+        if writable {
+            flags |= PageTableFlags::WRITABLE;
+        }
+        if !executable {
+            flags |= PageTableFlags::NO_EXECUTE;
+        }
 
         unsafe {
             mapper
@@ -412,7 +443,9 @@ pub fn munmap(start: u64, len: u64) -> Result<(), UserError> {
         if let Some(pos) = pages.iter().position(|p| *p == page) {
             if let Ok((frame, flush)) = unsafe { mapper.unmap(page) } {
                 flush.flush();
-                unsafe { allocator.deallocate_frame(frame); }
+                unsafe {
+                    allocator.deallocate_frame(frame);
+                }
                 pages.swap_remove(pos);
             }
         }
@@ -436,13 +469,19 @@ pub fn cleanup_process() {
     let mut mapper_guard = MAPPER.lock();
     let mut allocator_guard = FRAME_ALLOCATOR.lock();
 
-    let Some(mapper) = mapper_guard.as_mut() else { return; };
-    let Some(allocator) = allocator_guard.as_mut() else { return; };
+    let Some(mapper) = mapper_guard.as_mut() else {
+        return;
+    };
+    let Some(allocator) = allocator_guard.as_mut() else {
+        return;
+    };
 
     while let Some(page) = pages.pop() {
         if let Ok((frame, flush)) = unsafe { mapper.unmap(page) } {
             flush.flush();
-            unsafe { allocator.deallocate_frame(frame); }
+            unsafe {
+                allocator.deallocate_frame(frame);
+            }
         }
     }
 
@@ -464,12 +503,7 @@ enum EnterError {
 }
 
 unsafe extern "C" {
-    fn oxenna_enter_user_and_wait(
-        entry: u64,
-        stack: u64,
-        user_cs: u64,
-        user_ss: u64,
-    ) -> u64;
+    fn oxenna_enter_user_and_wait(entry: u64, stack: u64, user_cs: u64, user_ss: u64) -> u64;
 }
 
 fn enter_user_and_wait(entry: u64, stack: u64) -> Result<i64, EnterError> {
@@ -477,9 +511,7 @@ fn enter_user_and_wait(entry: u64, stack: u64) -> Result<i64, EnterError> {
     let user_cs = ((selectors.user_code_selector.index() as u64) << 3) | 3;
     let user_ss = ((selectors.user_data_selector.index() as u64) << 3) | 3;
 
-    let status = unsafe {
-        oxenna_enter_user_and_wait(entry, stack, user_cs, user_ss)
-    };
+    let status = unsafe { oxenna_enter_user_and_wait(entry, stack, user_cs, user_ss) };
     Ok(status as i64)
 }
 

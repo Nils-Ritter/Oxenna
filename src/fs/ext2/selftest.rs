@@ -16,7 +16,11 @@ impl From<FsError> for TestError {
 }
 
 fn ensure(c: bool, msg: &'static str) -> Result<(), TestError> {
-    if c { Ok(()) } else { Err(TestError::Check(msg)) }
+    if c {
+        Ok(())
+    } else {
+        Err(TestError::Check(msg))
+    }
 }
 
 fn pattern(i: usize) -> u8 {
@@ -34,17 +38,26 @@ pub fn run<D: BlockDevice>(
     log(format_args!("[ext2] formatting..."));
     let mut fs = Ext2::format(dev, opts, zero_clock)?;
     let u0 = fs.usage();
-    log(format_args!("[ext2] {} blocks x {} B, {} inodes, {} blocks free", u0.total_blocks, u0.block_size, u0.total_inodes, u0.free_blocks));
+    log(format_args!(
+        "[ext2] {} blocks x {} B, {} inodes, {} blocks free",
+        u0.total_blocks, u0.block_size, u0.total_inodes, u0.free_blocks
+    ));
 
     let root = fs.root();
     let names: Vec<String> = fs.readdir(root)?.into_iter().map(|e| e.name).collect();
-    ensure(names.iter().any(|n| n == "lost+found"), "lost+found missing")?;
+    ensure(
+        names.iter().any(|n| n == "lost+found"),
+        "lost+found missing",
+    )?;
 
     // directories, small file
     let etc = fs.mkdir(root, "etc", 0o755)?;
     let hello = fs.create(etc, "hello.txt", 0o644)?;
     fs.write(hello, 0, b"hello oxenna\n")?;
-    ensure(fs.read_to_vec(hello)? == b"hello oxenna\n", "small file readback")?;
+    ensure(
+        fs.read_to_vec(hello)? == b"hello oxenna\n",
+        "small file readback",
+    )?;
     log(format_args!("[ext2] small file ok"));
 
     // large file: exercises direct, indirect and (depending on sizes) double-indirect blocks
@@ -58,16 +71,25 @@ pub fn run<D: BlockDevice>(
         off += n;
     }
     let back = fs.read_to_vec(big)?;
-    ensure(back.len() == total && back.iter().enumerate().all(|(i, &b)| b == pattern(i)), "big file readback")?;
+    ensure(
+        back.len() == total && back.iter().enumerate().all(|(i, &b)| b == pattern(i)),
+        "big file readback",
+    )?;
     log(format_args!("[ext2] {} KiB file ok", big_kib));
 
     // truncate must give blocks back
     let before = fs.usage().free_blocks;
     fs.truncate(big, 10_000)?;
-    ensure(fs.usage().free_blocks > before, "truncate did not free blocks")?;
+    ensure(
+        fs.usage().free_blocks > before,
+        "truncate did not free blocks",
+    )?;
     ensure(fs.stat(big)?.size == 10_000, "truncate size")?;
     let back = fs.read_to_vec(big)?;
-    ensure(back.iter().enumerate().all(|(i, &b)| b == pattern(i)), "data after truncate")?;
+    ensure(
+        back.iter().enumerate().all(|(i, &b)| b == pattern(i)),
+        "data after truncate",
+    )?;
     log(format_args!("[ext2] truncate ok"));
 
     // symlinks: relative (fast), absolute (fast), long (slow, data block)
@@ -86,18 +108,30 @@ pub fn run<D: BlockDevice>(
     ensure(fs.readlink(l)? == b"/etc/hello.txt", "readlink")?;
     fs.symlink(root, "loop1", "loop2")?;
     fs.symlink(root, "loop2", "loop1")?;
-    ensure(fs.resolve(root, "/loop1", true) == Err(FsError::Loop), "loop detection")?;
+    ensure(
+        fs.resolve(root, "/loop1", true) == Err(FsError::Loop),
+        "loop detection",
+    )?;
     log(format_args!("[ext2] symlinks ok"));
 
     // hard link + rename + unlink + rmdir
     fs.link(root, "hard.txt", hello)?;
     ensure(fs.stat(hello)?.links == 2, "link count")?;
     fs.rename(etc, "hello.txt", root, "hello2.txt")?;
-    ensure(fs.lookup(etc, "hello.txt") == Err(FsError::NotFound), "old name gone")?;
-    ensure(fs.resolve(root, "/abs.lnk", true) == Err(FsError::NotFound), "dangling symlink")?;
+    ensure(
+        fs.lookup(etc, "hello.txt") == Err(FsError::NotFound),
+        "old name gone",
+    )?;
+    ensure(
+        fs.resolve(root, "/abs.lnk", true) == Err(FsError::NotFound),
+        "dangling symlink",
+    )?;
     fs.unlink(root, "hard.txt")?;
     ensure(fs.stat(hello)?.links == 1, "link count after unlink")?;
-    ensure(fs.rmdir(root, "etc") == Err(FsError::NotEmpty), "rmdir non-empty")?;
+    ensure(
+        fs.rmdir(root, "etc") == Err(FsError::NotEmpty),
+        "rmdir non-empty",
+    )?;
     fs.unlink(etc, "rel.lnk")?;
     fs.rmdir(root, "etc")?;
     ensure(fs.stat(root)?.links == 3, "root link count")?; // ".", "..", lost+found's ".."
@@ -117,7 +151,10 @@ pub fn run<D: BlockDevice>(
     let mut fs = Ext2::mount(dev)?;
     let root = fs.root();
     let h = fs.resolve(root, "/hello2.txt", true)?;
-    ensure(fs.read_to_vec(h)? == b"hello oxenna\n", "remount: small file")?;
+    ensure(
+        fs.read_to_vec(h)? == b"hello oxenna\n",
+        "remount: small file",
+    )?;
     let b = fs.resolve(root, "/big.bin", true)?;
     ensure(fs.stat(b)?.size == 10_000, "remount: big file")?;
     let m = fs.resolve(root, "/many", true)?;
@@ -129,6 +166,10 @@ pub fn run<D: BlockDevice>(
 /// Kernel-test friendly entry point on a 32 MiB RAM disk (no QEMU disk required).
 pub fn run_on_ramdisk(log: &mut dyn FnMut(Arguments<'_>)) -> Result<(), TestError> {
     use crate::drivers::block::RamDisk;
-    let opts = FormatOptions { block_size: 1024, bytes_per_inode: 8192, label: "ramtest" };
+    let opts = FormatOptions {
+        block_size: 1024,
+        bytes_per_inode: 8192,
+        label: "ramtest",
+    };
     run(RamDisk::new(64 * 1024), &opts, 600, log).map(|_| ())
 }

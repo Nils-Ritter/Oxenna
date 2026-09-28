@@ -19,9 +19,9 @@ pub use heap::{HEAP_SIZE, HEAP_START};
 use limine::request::{HhdmRequest, MemmapRequest};
 use spin::Mutex;
 use x86_64::{
+    VirtAddr,
     registers::control::Cr3,
     structures::paging::{OffsetPageTable, PageTable},
-    VirtAddr,
 };
 
 use crate::console_println_color;
@@ -56,10 +56,7 @@ pub static MEMMAP_REQUEST: MemmapRequest = MemmapRequest::new();
 /// - Limine's memory map response exists.
 /// - The current CR3 contains a valid level-4 page table.
 /// - The HHDM covers the physical memory that will be accessed.
-pub unsafe fn init() -> (
-    OffsetPageTable<'static>,
-    BootInfoFrameAllocator,
-) {
+pub unsafe fn init() -> (OffsetPageTable<'static>, BootInfoFrameAllocator) {
     let hhdm = HHDM_REQUEST
         .response()
         .expect("Limine did not provide an HHDM response");
@@ -68,19 +65,12 @@ pub unsafe fn init() -> (
         .response()
         .expect("Limine did not provide a memory-map response");
 
-    let physical_memory_offset =
-        VirtAddr::new(hhdm.offset);
+    let physical_memory_offset = VirtAddr::new(hhdm.offset);
 
-    let mapper = unsafe {
-        init_mapper(physical_memory_offset)
-    };
+    let mapper = unsafe { init_mapper(physical_memory_offset) };
 
-    let frame_allocator = unsafe {
-        BootInfoFrameAllocator::new(
-            memory_map.entries(),
-            physical_memory_offset,
-        )
-    };
+    let frame_allocator =
+        unsafe { BootInfoFrameAllocator::new(memory_map.entries(), physical_memory_offset) };
 
     (mapper, frame_allocator)
 }
@@ -96,31 +86,16 @@ pub static FRAME_ALLOCATOR: Mutex<Option<BootInfoFrameAllocator>> = Mutex::new(N
 ///
 /// The supplied offset must point to a valid HHDM mapping and the currently
 /// active CR3 must contain a valid level-4 page table.
-pub unsafe fn init_mapper(
-    physical_memory_offset: VirtAddr,
-) -> OffsetPageTable<'static> {
+pub unsafe fn init_mapper(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
     let (level_4_frame, _) = Cr3::read();
 
-    let level_4_table_addr =
-        physical_memory_offset
-            + level_4_frame
-                .start_address()
-                .as_u64();
+    let level_4_table_addr = physical_memory_offset + level_4_frame.start_address().as_u64();
 
-    let level_4_table_ptr =
-        level_4_table_addr
-            .as_mut_ptr::<PageTable>();
+    let level_4_table_ptr = level_4_table_addr.as_mut_ptr::<PageTable>();
 
-    let level_4_table = unsafe {
-        &mut *level_4_table_ptr
-    };
+    let level_4_table = unsafe { &mut *level_4_table_ptr };
 
-    unsafe {
-        OffsetPageTable::new(
-            level_4_table,
-            physical_memory_offset,
-        )
-    }
+    unsafe { OffsetPageTable::new(level_4_table, physical_memory_offset) }
 }
 
 /// Convert a physical address into its HHDM virtual address.
@@ -129,9 +104,7 @@ pub unsafe fn init_mapper(
 ///
 /// The supplied physical address must be backed by memory mapped by
 /// Limine's HHDM.
-pub unsafe fn phys_to_virt(
-    physical_address: u64,
-) -> VirtAddr {
+pub unsafe fn phys_to_virt(physical_address: u64) -> VirtAddr {
     let hhdm = HHDM_REQUEST
         .response()
         .expect("Limine did not provide an HHDM response");
@@ -151,13 +124,8 @@ pub unsafe fn phys_to_virt(
 ///
 /// The returned pointer is only valid while the corresponding physical
 /// memory remains mapped.
-pub unsafe fn phys_to_ptr<T>(
-    physical_address: u64,
-) -> *mut T {
-    unsafe {
-        phys_to_virt(physical_address)
-            .as_mut_ptr::<T>()
-    }
+pub unsafe fn phys_to_ptr<T>(physical_address: u64) -> *mut T {
+    unsafe { phys_to_virt(physical_address).as_mut_ptr::<T>() }
 }
 
 /// Print detailed information about the kernel's memory configuration.
@@ -198,20 +166,10 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
         }
     }
 
-    fn print_percent(
-        label: &str,
-        part: u64,
-        total: u64,
-    ) {
+    fn print_percent(label: &str, part: u64, total: u64) {
         let p = percent_x100(part, total);
 
-        console_println_color!(
-            Color::GREEN,
-            "  {:<20} {}.{}%",
-            label,
-            p / 100,
-            p % 100
-        );
+        console_println_color!(Color::GREEN, "  {:<20} {}.{}%", label, p / 100, p % 100);
     }
 
     fn memory_type_name(type_: u64) -> &'static str {
@@ -221,125 +179,72 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
             limine::memmap::MEMMAP_ACPI_RECLAIMABLE => "ACPI RECLAIMABLE",
             limine::memmap::MEMMAP_ACPI_NVS => "ACPI NVS",
             limine::memmap::MEMMAP_BAD_MEMORY => "BAD MEMORY",
-            limine::memmap::MEMMAP_BOOTLOADER_RECLAIMABLE => {
-                "BOOTLOADER RECLAIMABLE"
-            }
-            limine::memmap::MEMMAP_EXECUTABLE_AND_MODULES => {
-                "EXECUTABLE / MODULES"
-            }
+            limine::memmap::MEMMAP_BOOTLOADER_RECLAIMABLE => "BOOTLOADER RECLAIMABLE",
+            limine::memmap::MEMMAP_EXECUTABLE_AND_MODULES => "EXECUTABLE / MODULES",
             limine::memmap::MEMMAP_FRAMEBUFFER => "FRAMEBUFFER",
             _ => "UNKNOWN",
         }
     }
 
-    fn contains(
-        base: u64,
-        length: u64,
-        address: u64,
-    ) -> bool {
-        let Some(end) =
-            base.checked_add(length)
-        else {
+    fn contains(base: u64, length: u64, address: u64) -> bool {
+        let Some(end) = base.checked_add(length) else {
             return false;
         };
 
         address >= base && address < end
     }
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "========================================"
-    );
+    console_println_color!(Color::GREEN, "========================================");
 
-    console_println_color!(
-        Color::GREEN,
-        "       KERNEL MEMORY ANALYSIS"
-    );
+    console_println_color!(Color::GREEN, "       KERNEL MEMORY ANALYSIS");
 
-    console_println_color!(
-        Color::GREEN,
-        "========================================"
-    );
+    console_println_color!(Color::GREEN, "========================================");
 
     // ========================================================
     // Requests / responses
     // ========================================================
 
-    let hhdm =
-        match HHDM_REQUEST.response() {
-            Some(response) => response,
+    let hhdm = match HHDM_REQUEST.response() {
+        Some(response) => response,
 
-            None => {
-                console_println_color!(
-                    Color::GREEN,
-                    ""
-                );
+        None => {
+            console_println_color!(Color::GREEN, "");
 
-                console_println_color!(
-                    Color::GREEN,
-                    "[ERROR]"
-                );
+            console_println_color!(Color::GREEN, "[ERROR]");
 
-                console_println_color!(
-                    Color::GREEN,
-                    "  Limine HHDM response unavailable"
-                );
+            console_println_color!(Color::GREEN, "  Limine HHDM response unavailable");
 
-                return;
-            }
-        };
+            return;
+        }
+    };
 
-    let memory_map =
-        match MEMMAP_REQUEST.response() {
-            Some(response) => response,
+    let memory_map = match MEMMAP_REQUEST.response() {
+        Some(response) => response,
 
-            None => {
-                console_println_color!(
-                    Color::GREEN,
-                    ""
-                );
+        None => {
+            console_println_color!(Color::GREEN, "");
 
-                console_println_color!(
-                    Color::GREEN,
-                    "[ERROR]"
-                );
+            console_println_color!(Color::GREEN, "[ERROR]");
 
-                console_println_color!(
-                    Color::GREEN,
-                    "  Limine memory-map response unavailable"
-                );
+            console_println_color!(Color::GREEN, "  Limine memory-map response unavailable");
 
-                return;
-            }
-        };
+            return;
+        }
+    };
 
-    let entries =
-        memory_map.entries();
+    let entries = memory_map.entries();
 
     // ========================================================
     // HHDM
     // ========================================================
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[HHDM]"
-    );
+    console_println_color!(Color::GREEN, "[HHDM]");
 
-    console_println_color!(
-        Color::GREEN,
-        "  Offset:             {:#018x}",
-        hhdm.offset
-    );
+    console_println_color!(Color::GREEN, "  Offset:             {:#018x}", hhdm.offset);
 
     console_println_color!(
         Color::GREEN,
@@ -375,36 +280,25 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
         let base = entry.base;
         let length = entry.length;
 
-        let end =
-            match base.checked_add(length) {
-                Some(end) => end,
+        let end = match base.checked_add(length) {
+            Some(end) => end,
 
-                None => {
-                    continue;
-                }
-            };
+            None => {
+                continue;
+            }
+        };
 
-        address_map_bytes =
-            address_map_bytes.saturating_add(length);
+        address_map_bytes = address_map_bytes.saturating_add(length);
 
         match entry.type_ {
             limine::memmap::MEMMAP_USABLE => {
-                usable_bytes =
-                    usable_bytes.saturating_add(length);
+                usable_bytes = usable_bytes.saturating_add(length);
 
                 usable_regions += 1;
 
-                first_usable_base =
-                    Some(
-                        first_usable_base
-                            .map_or(base, |old| old.min(base))
-                    );
+                first_usable_base = Some(first_usable_base.map_or(base, |old| old.min(base)));
 
-                last_usable_end =
-                    Some(
-                        last_usable_end
-                            .map_or(end, |old| old.max(end))
-                    );
+                last_usable_end = Some(last_usable_end.map_or(end, |old| old.max(end)));
 
                 if length > largest_usable_length {
                     largest_usable_length = length;
@@ -413,43 +307,35 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
             }
 
             limine::memmap::MEMMAP_RESERVED => {
-                reserved_bytes =
-                    reserved_bytes.saturating_add(length);
+                reserved_bytes = reserved_bytes.saturating_add(length);
             }
 
             limine::memmap::MEMMAP_ACPI_RECLAIMABLE => {
-                acpi_reclaim_bytes =
-                    acpi_reclaim_bytes.saturating_add(length);
+                acpi_reclaim_bytes = acpi_reclaim_bytes.saturating_add(length);
             }
 
             limine::memmap::MEMMAP_ACPI_NVS => {
-                acpi_nvs_bytes =
-                    acpi_nvs_bytes.saturating_add(length);
+                acpi_nvs_bytes = acpi_nvs_bytes.saturating_add(length);
             }
 
             limine::memmap::MEMMAP_BOOTLOADER_RECLAIMABLE => {
-                bootloader_bytes =
-                    bootloader_bytes.saturating_add(length);
+                bootloader_bytes = bootloader_bytes.saturating_add(length);
             }
 
             limine::memmap::MEMMAP_EXECUTABLE_AND_MODULES => {
-                kernel_bytes =
-                    kernel_bytes.saturating_add(length);
+                kernel_bytes = kernel_bytes.saturating_add(length);
             }
 
             limine::memmap::MEMMAP_FRAMEBUFFER => {
-                framebuffer_bytes =
-                    framebuffer_bytes.saturating_add(length);
+                framebuffer_bytes = framebuffer_bytes.saturating_add(length);
             }
 
             limine::memmap::MEMMAP_BAD_MEMORY => {
-                bad_bytes =
-                    bad_bytes.saturating_add(length);
+                bad_bytes = bad_bytes.saturating_add(length);
             }
 
             _ => {
-                other_bytes =
-                    other_bytes.saturating_add(length);
+                other_bytes = other_bytes.saturating_add(length);
             }
         }
     }
@@ -458,21 +344,11 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     // Physical memory
     // ========================================================
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[PHYSICAL MEMORY]"
-    );
+    console_println_color!(Color::GREEN, "[PHYSICAL MEMORY]");
 
-    console_println_color!(
-        Color::GREEN,
-        "  Address-map bytes:  {}",
-        address_map_bytes
-    );
+    console_println_color!(Color::GREEN, "  Address-map bytes:  {}", address_map_bytes);
 
     console_println_color!(
         Color::GREEN,
@@ -486,11 +362,7 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
         mib(usable_bytes)
     );
 
-    console_println_color!(
-        Color::GREEN,
-        "  Usable regions:     {}",
-        usable_regions
-    );
+    console_println_color!(Color::GREEN, "  Usable regions:     {}", usable_regions);
 
     console_println_color!(
         Color::GREEN,
@@ -506,54 +378,25 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
         );
     }
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    print_percent(
-        "Usable",
-        usable_bytes,
-        address_map_bytes,
-    );
+    print_percent("Usable", usable_bytes, address_map_bytes);
 
-    print_percent(
-        "Reserved",
-        reserved_bytes,
-        address_map_bytes,
-    );
+    print_percent("Reserved", reserved_bytes, address_map_bytes);
 
-    print_percent(
-        "Bootloader",
-        bootloader_bytes,
-        address_map_bytes,
-    );
+    print_percent("Bootloader", bootloader_bytes, address_map_bytes);
 
-    print_percent(
-        "Kernel/modules",
-        kernel_bytes,
-        address_map_bytes,
-    );
+    print_percent("Kernel/modules", kernel_bytes, address_map_bytes);
 
-    print_percent(
-        "Framebuffer",
-        framebuffer_bytes,
-        address_map_bytes,
-    );
+    print_percent("Framebuffer", framebuffer_bytes, address_map_bytes);
 
     // ========================================================
     // Memory-map types
     // ========================================================
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[MEMORY MAP TYPES]"
-    );
+    console_println_color!(Color::GREEN, "[MEMORY MAP TYPES]");
 
     console_println_color!(
         Color::GREEN,
@@ -591,11 +434,7 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
         kib(framebuffer_bytes)
     );
 
-    console_println_color!(
-        Color::GREEN,
-        "  Bad memory:         {} KiB",
-        kib(bad_bytes)
-    );
+    console_println_color!(Color::GREEN, "  Bad memory:         {} KiB", kib(bad_bytes));
 
     console_println_color!(
         Color::GREEN,
@@ -607,43 +446,21 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     // Physical frames
     // ========================================================
 
-    let usable_frames =
-        entries
-            .iter()
-            .filter(|entry| {
-                entry.type_
-                    == limine::memmap::MEMMAP_USABLE
-            })
-            .map(|entry| {
-                entry.length / PAGE_SIZE as u64
-            })
-            .sum::<u64>();
+    let usable_frames = entries
+        .iter()
+        .filter(|entry| entry.type_ == limine::memmap::MEMMAP_USABLE)
+        .map(|entry| entry.length / PAGE_SIZE as u64)
+        .sum::<u64>();
 
-    let usable_frame_bytes =
-        usable_frames
-            .saturating_mul(PAGE_SIZE as u64);
+    let usable_frame_bytes = usable_frames.saturating_mul(PAGE_SIZE as u64);
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[PHYSICAL FRAMES]"
-    );
+    console_println_color!(Color::GREEN, "[PHYSICAL FRAMES]");
 
-    console_println_color!(
-        Color::GREEN,
-        "  Frame size:         {} bytes",
-        PAGE_SIZE
-    );
+    console_println_color!(Color::GREEN, "  Frame size:         {} bytes", PAGE_SIZE);
 
-    console_println_color!(
-        Color::GREEN,
-        "  Usable frames:      {}",
-        usable_frames
-    );
+    console_println_color!(Color::GREEN, "  Usable frames:      {}", usable_frames);
 
     console_println_color!(
         Color::GREEN,
@@ -653,35 +470,21 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
 
     match first_usable_base {
         Some(base) => {
-            console_println_color!(
-                Color::GREEN,
-                "  First usable:       {:#018x}",
-                base
-            );
+            console_println_color!(Color::GREEN, "  First usable:       {:#018x}", base);
         }
 
         None => {
-            console_println_color!(
-                Color::GREEN,
-                "  First usable:       NONE"
-            );
+            console_println_color!(Color::GREEN, "  First usable:       NONE");
         }
     }
 
     match last_usable_end {
         Some(end) => {
-            console_println_color!(
-                Color::GREEN,
-                "  Last usable end:    {:#018x}",
-                end
-            );
+            console_println_color!(Color::GREEN, "  Last usable end:    {:#018x}", end);
         }
 
         None => {
-            console_println_color!(
-                Color::GREEN,
-                "  Last usable end:    NONE"
-            );
+            console_println_color!(Color::GREEN, "  Last usable end:    NONE");
         }
     }
 
@@ -689,19 +492,11 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     // Frame allocator
     // ========================================================
 
-    let free_frames =
-        frame_allocator
-            .free_frame_count() as u64;
+    let free_frames = frame_allocator.free_frame_count() as u64;
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[FRAME ALLOCATOR]"
-    );
+    console_println_color!(Color::GREEN, "[FRAME ALLOCATOR]");
 
     console_println_color!(
         Color::GREEN,
@@ -709,60 +504,37 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
         usable_frames
     );
 
-    console_println_color!(
-        Color::GREEN,
-        "  Reported free:      {} frames",
-        free_frames
-    );
+    console_println_color!(Color::GREEN, "  Reported free:      {} frames", free_frames);
 
     console_println_color!(
         Color::GREEN,
         "  Reported free RAM:  {} MiB",
-        mib(
-            free_frames
-                .saturating_mul(PAGE_SIZE as u64)
-        )
+        mib(free_frames.saturating_mul(PAGE_SIZE as u64))
     );
 
     if usable_frames > 0 {
-        print_percent(
-            "Free frame share",
-            free_frames,
-            usable_frames,
-        );
+        print_percent("Free frame share", free_frames, usable_frames);
     }
 
     // ========================================================
     // Physical address range
     // ========================================================
 
-    let mut lowest_address =
-        u64::MAX;
+    let mut lowest_address = u64::MAX;
 
-    let mut highest_address =
-        0u64;
+    let mut highest_address = 0u64;
 
     for entry in entries {
-        lowest_address =
-            lowest_address.min(entry.base);
+        lowest_address = lowest_address.min(entry.base);
 
-        if let Some(end) =
-            entry.base.checked_add(entry.length)
-        {
-            highest_address =
-                highest_address.max(end);
+        if let Some(end) = entry.base.checked_add(entry.length) {
+            highest_address = highest_address.max(end);
         }
     }
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[PHYSICAL ADDRESS SPACE]"
-    );
+    console_println_color!(Color::GREEN, "[PHYSICAL ADDRESS SPACE]");
 
     if lowest_address != u64::MAX {
         console_println_color!(
@@ -771,10 +543,7 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
             lowest_address
         );
     } else {
-        console_println_color!(
-            Color::GREEN,
-            "  Lowest mapped:      NONE"
-        );
+        console_println_color!(Color::GREEN, "  Lowest mapped:      NONE");
     }
 
     console_println_color!(
@@ -786,36 +555,21 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     console_println_color!(
         Color::GREEN,
         "  Boundary span:      {} MiB",
-        mib(
-            highest_address
-                .saturating_sub(lowest_address)
-        )
+        mib(highest_address.saturating_sub(lowest_address))
     );
 
     // ========================================================
     // Memory-map regions
     // ========================================================
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[MEMORY MAP REGIONS]"
-    );
+    console_println_color!(Color::GREEN, "[MEMORY MAP REGIONS]");
 
-    for (index, entry) in
-        entries.iter().enumerate()
-    {
-        let start =
-            entry.base;
+    for (index, entry) in entries.iter().enumerate() {
+        let start = entry.base;
 
-        let end =
-            start
-                .checked_add(entry.length)
-                .unwrap_or(u64::MAX);
+        let end = start.checked_add(entry.length).unwrap_or(u64::MAX);
 
         console_println_color!(
             Color::GREEN,
@@ -832,58 +586,29 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     // Page tables / CR3
     // ========================================================
 
-    let (cr3_frame, cr3_flags) =
-        Cr3::read();
+    let (cr3_frame, cr3_flags) = Cr3::read();
 
-    let cr3_physical =
-        cr3_frame
-            .start_address()
-            .as_u64();
+    let cr3_physical = cr3_frame.start_address().as_u64();
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[PAGE TABLES]"
-    );
+    console_println_color!(Color::GREEN, "[PAGE TABLES]");
 
-    console_println_color!(
-        Color::GREEN,
-        "  CR3 physical:      {:#018x}",
-        cr3_physical
-    );
+    console_println_color!(Color::GREEN, "  CR3 physical:      {:#018x}", cr3_physical);
 
     match hhdm.offset.checked_add(cr3_physical) {
         Some(cr3_virtual) => {
-            console_println_color!(
-                Color::GREEN,
-                "  CR3 virtual:       {:#018x}",
-                cr3_virtual
-            );
+            console_println_color!(Color::GREEN, "  CR3 virtual:       {:#018x}", cr3_virtual);
         }
 
         None => {
-            console_println_color!(
-                Color::GREEN,
-                "  CR3 virtual:       OVERFLOW"
-            );
+            console_println_color!(Color::GREEN, "  CR3 virtual:       OVERFLOW");
         }
     }
 
-    console_println_color!(
-        Color::GREEN,
-        "  CR3 flags:         {:?}",
-        cr3_flags
-    );
+    console_println_color!(Color::GREEN, "  CR3 flags:         {:?}", cr3_flags);
 
-    console_println_color!(
-        Color::GREEN,
-        "  Page size:         {} bytes",
-        PAGE_SIZE
-    );
+    console_println_color!(Color::GREEN, "  Page size:         {} bytes", PAGE_SIZE);
 
     console_println_color!(
         Color::GREEN,
@@ -892,17 +617,11 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     );
 
     // Find which memory-map region contains CR3.
-    let mut cr3_region_type: Option<u32> =
-        None;
+    let mut cr3_region_type: Option<u32> = None;
 
     for entry in entries {
-        if contains(
-            entry.base,
-            entry.length,
-            cr3_physical,
-        ) {
-            cr3_region_type =
-                Some(entry.type_ as u32);
+        if contains(entry.base, entry.length, cr3_physical) {
+            cr3_region_type = Some(entry.type_ as u32);
 
             break;
         }
@@ -918,10 +637,7 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
         }
 
         None => {
-            console_println_color!(
-                Color::GREEN,
-                "  CR3 region:        NOT FOUND"
-            );
+            console_println_color!(Color::GREEN, "  CR3 region:        NOT FOUND");
         }
     }
 
@@ -929,26 +645,14 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     // HHDM conversion
     // ========================================================
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[HHDM ADDRESS CONVERSION]"
-    );
+    console_println_color!(Color::GREEN, "[HHDM ADDRESS CONVERSION]");
 
-    if let Some(base) =
-        first_usable_base
-    {
+    if let Some(base) = first_usable_base {
         match hhdm.offset.checked_add(base) {
             Some(virtual_address) => {
-                console_println_color!(
-                    Color::GREEN,
-                    "  First physical:    {:#018x}",
-                    base
-                );
+                console_println_color!(Color::GREEN, "  First physical:    {:#018x}", base);
 
                 console_println_color!(
                     Color::GREEN,
@@ -958,24 +662,15 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
             }
 
             None => {
-                console_println_color!(
-                    Color::GREEN,
-                    "  First HHDM VA:     OVERFLOW"
-                );
+                console_println_color!(Color::GREEN, "  First HHDM VA:     OVERFLOW");
             }
         }
     }
 
-    if let Some(end) =
-        last_usable_end
-    {
+    if let Some(end) = last_usable_end {
         match hhdm.offset.checked_add(end) {
             Some(virtual_address) => {
-                console_println_color!(
-                    Color::GREEN,
-                    "  Last physical:     {:#018x}",
-                    end
-                );
+                console_println_color!(Color::GREEN, "  Last physical:     {:#018x}", end);
 
                 console_println_color!(
                     Color::GREEN,
@@ -985,10 +680,7 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
             }
 
             None => {
-                console_println_color!(
-                    Color::GREEN,
-                    "  Last HHDM VA:      OVERFLOW"
-                );
+                console_println_color!(Color::GREEN, "  Last HHDM VA:      OVERFLOW");
             }
         }
     }
@@ -997,49 +689,27 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     // Kernel heap
     // ========================================================
 
-    let heap_start =
-        HEAP_START;
+    let heap_start = HEAP_START;
 
-    let heap_size =
-        HEAP_SIZE;
+    let heap_size = HEAP_SIZE;
 
-    let heap_end =
-        heap_start.checked_add(heap_size);
+    let heap_end = heap_start.checked_add(heap_size);
 
-    let heap_pages =
-        (heap_size + PAGE_SIZE - 1)
-            / PAGE_SIZE;
+    let heap_pages = (heap_size + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[KERNEL HEAP]"
-    );
+    console_println_color!(Color::GREEN, "[KERNEL HEAP]");
 
-    console_println_color!(
-        Color::GREEN,
-        "  Start:             {:#018x}",
-        heap_start
-    );
+    console_println_color!(Color::GREEN, "  Start:             {:#018x}", heap_start);
 
     match heap_end {
         Some(end) => {
-            console_println_color!(
-                Color::GREEN,
-                "  End:               {:#018x}",
-                end
-            );
+            console_println_color!(Color::GREEN, "  End:               {:#018x}", end);
         }
 
         None => {
-            console_println_color!(
-                Color::GREEN,
-                "  End:               OVERFLOW"
-            );
+            console_println_color!(Color::GREEN, "  End:               OVERFLOW");
         }
     }
 
@@ -1055,11 +725,7 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
         mib(heap_size as u64)
     );
 
-    console_println_color!(
-        Color::GREEN,
-        "  Pages:             {}",
-        heap_pages
-    );
+    console_println_color!(Color::GREEN, "  Pages:             {}", heap_pages);
 
     console_println_color!(
         Color::GREEN,
@@ -1089,27 +755,13 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     // Address-space layout
     // ========================================================
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[ADDRESS SPACE]"
-    );
+    console_println_color!(Color::GREEN, "[ADDRESS SPACE]");
 
-    console_println_color!(
-        Color::GREEN,
-        "  HHDM base:         {:#018x}",
-        hhdm.offset
-    );
+    console_println_color!(Color::GREEN, "  HHDM base:         {:#018x}", hhdm.offset);
 
-    console_println_color!(
-        Color::GREEN,
-        "  Heap base:         {:#018x}",
-        heap_start
-    );
+    console_println_color!(Color::GREEN, "  Heap base:         {:#018x}", heap_start);
 
     console_println_color!(
         Color::GREEN,
@@ -1118,17 +770,12 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     );
 
     if let Some(end) = heap_end {
-        console_println_color!(
-            Color::GREEN,
-            "  Heap end:          {:#018x}",
-            end
-        );
+        console_println_color!(Color::GREEN, "  Heap end:          {:#018x}", end);
 
         console_println_color!(
             Color::GREEN,
             "  Heap overlaps HHDM: {}",
-            heap_start < hhdm.offset as usize
-                && end > hhdm.offset as usize
+            heap_start < hhdm.offset as usize && end > hhdm.offset as usize
         );
     }
 
@@ -1136,34 +783,16 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     // Heap / frame capacity
     // ========================================================
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[FRAME CAPACITY]"
-    );
+    console_println_color!(Color::GREEN, "[FRAME CAPACITY]");
 
-    console_println_color!(
-        Color::GREEN,
-        "  Heap pages:        {}",
-        heap_pages
-    );
+    console_println_color!(Color::GREEN, "  Heap pages:        {}", heap_pages);
 
-    console_println_color!(
-        Color::GREEN,
-        "  Usable frames:     {}",
-        usable_frames
-    );
+    console_println_color!(Color::GREEN, "  Usable frames:     {}", usable_frames);
 
     if usable_frames > 0 {
-        print_percent(
-            "Heap / usable",
-            heap_pages as u64,
-            usable_frames,
-        );
+        print_percent("Heap / usable", heap_pages as u64, usable_frames);
     }
 
     if heap_pages > usable_frames as usize {
@@ -1177,21 +806,11 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     // Alignment
     // ========================================================
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[ALIGNMENT]"
-    );
+    console_println_color!(Color::GREEN, "[ALIGNMENT]");
 
-    console_println_color!(
-        Color::GREEN,
-        "  Page size:         {}",
-        PAGE_SIZE
-    );
+    console_println_color!(Color::GREEN, "  Page size:         {}", PAGE_SIZE);
 
     console_println_color!(
         Color::GREEN,
@@ -1211,9 +830,7 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
         heap_start % PAGE_SIZE == 0
     );
 
-    if let Some(base) =
-        first_usable_base
-    {
+    if let Some(base) = first_usable_base {
         console_println_color!(
             Color::GREEN,
             "  First frame:       {}",
@@ -1225,15 +842,9 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
     // Summary
     // ========================================================
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "[SUMMARY]"
-    );
+    console_println_color!(Color::GREEN, "[SUMMARY]");
 
     console_println_color!(
         Color::GREEN,
@@ -1241,17 +852,9 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
         mib(usable_frame_bytes)
     );
 
-    console_println_color!(
-        Color::GREEN,
-        "  Usable frames:     {}",
-        usable_frames
-    );
+    console_println_color!(Color::GREEN, "  Usable frames:     {}", usable_frames);
 
-    console_println_color!(
-        Color::GREEN,
-        "  Free frames:       {}",
-        free_frames
-    );
+    console_println_color!(Color::GREEN, "  Free frames:       {}", free_frames);
 
     console_println_color!(
         Color::GREEN,
@@ -1259,46 +862,19 @@ pub fn mem_analyze(frame_allocator: &BootInfoFrameAllocator) {
         mib(heap_size as u64)
     );
 
-    console_println_color!(
-        Color::GREEN,
-        "  Heap pages:        {}",
-        heap_pages
-    );
+    console_println_color!(Color::GREEN, "  Heap pages:        {}", heap_pages);
 
-    console_println_color!(
-        Color::GREEN,
-        "  HHDM:              {:#018x}",
-        hhdm.offset
-    );
+    console_println_color!(Color::GREEN, "  HHDM:              {:#018x}", hhdm.offset);
 
-    console_println_color!(
-        Color::GREEN,
-        "  CR3:               {:#018x}",
-        cr3_physical
-    );
+    console_println_color!(Color::GREEN, "  CR3:               {:#018x}", cr3_physical);
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 
-    console_println_color!(
-        Color::GREEN,
-        "========================================"
-    );
+    console_println_color!(Color::GREEN, "========================================");
 
-    console_println_color!(
-        Color::GREEN,
-        "       END MEMORY ANALYSIS"
-    );
+    console_println_color!(Color::GREEN, "       END MEMORY ANALYSIS");
 
-    console_println_color!(
-        Color::GREEN,
-        "========================================"
-    );
+    console_println_color!(Color::GREEN, "========================================");
 
-    console_println_color!(
-        Color::GREEN,
-        ""
-    );
+    console_println_color!(Color::GREEN, "");
 }

@@ -5,13 +5,13 @@
 //! directly, while keeping the implementation small enough for the current
 //! single-process kernel.
 
-use core::arch::global_asm;
 use alloc::{string::String, vec, vec::Vec};
+use core::arch::global_asm;
 use spin::Mutex;
 use x86_64::structures::paging::{Mapper, Page, Size4KiB};
 
 use crate::console;
-use crate::fs::{Entry, FileType, FS};
+use crate::fs::{Entry, FS, FileType};
 
 #[cfg(feature = "userspace")]
 use crate::user;
@@ -221,37 +221,65 @@ fn fds() -> spin::MutexGuard<'static, Option<Vec<Option<OpenFile>>>> {
     let mut guard = FD_TABLE.lock();
     if guard.is_none() {
         let mut v = Vec::new();
-        v.push(Some(OpenFile { path: String::new(), offset: 0, flags: 0 }));
-        v.push(Some(OpenFile { path: String::new(), offset: 0, flags: 0 }));
-        v.push(Some(OpenFile { path: String::new(), offset: 0, flags: 0 }));
+        v.push(Some(OpenFile {
+            path: String::new(),
+            offset: 0,
+            flags: 0,
+        }));
+        v.push(Some(OpenFile {
+            path: String::new(),
+            offset: 0,
+            flags: 0,
+        }));
+        v.push(Some(OpenFile {
+            path: String::new(),
+            offset: 0,
+            flags: 0,
+        }));
         *guard = Some(v);
     }
     guard
 }
 
-fn ret(v: i64) -> u64 { v as u64 }
-fn err(e: i64) -> u64 { (-e) as u64 }
+fn ret(v: i64) -> u64 {
+    v as u64
+}
+fn err(e: i64) -> u64 {
+    (-e) as u64
+}
 
 fn user_range_ok(ptr: u64, len: usize) -> bool {
-    if len == 0 { return ptr < 0x0000_8000_0000_0000; }
-    let end = match ptr.checked_add(len as u64 - 1) { Some(v) => v, None => return false };
+    if len == 0 {
+        return ptr < 0x0000_8000_0000_0000;
+    }
+    let end = match ptr.checked_add(len as u64 - 1) {
+        Some(v) => v,
+        None => return false,
+    };
     if ptr >= 0x0000_8000_0000_0000 || end >= 0x0000_8000_0000_0000 {
         return false;
     }
 
     let mut mapper = crate::kmem::MAPPER.lock();
-    let Some(mapper) = mapper.as_mut() else { return false; };
+    let Some(mapper) = mapper.as_mut() else {
+        return false;
+    };
 
     let first = ptr & !0xfff;
     let last = end & !0xfff;
     let mut page = first;
     loop {
-        if mapper.translate_page(Page::<Size4KiB>::containing_address(
-            x86_64::VirtAddr::new(page)
-        )).is_err() {
+        if mapper
+            .translate_page(Page::<Size4KiB>::containing_address(x86_64::VirtAddr::new(
+                page,
+            )))
+            .is_err()
+        {
             return false;
         }
-        if page == last { break; }
+        if page == last {
+            break;
+        }
         page += 4096;
     }
     true
@@ -279,7 +307,9 @@ fn copy_to_user(ptr: u64, data: &[u8]) -> Result<(), u64> {
 }
 
 fn user_string(ptr: u64, max: usize) -> Result<String, u64> {
-    if ptr == 0 { return Err(err(EFAULT)); }
+    if ptr == 0 {
+        return Err(err(EFAULT));
+    }
     let mut bytes = Vec::new();
     for i in 0..max {
         if !user_range_ok(ptr + i as u64, 1) {
@@ -295,7 +325,7 @@ fn user_string(ptr: u64, max: usize) -> Result<String, u64> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn syscall_dispatch(frame: *mut SyscallFrame) -> u64 {
+pub unsafe extern "C" fn syscall_dispatch(frame: *mut SyscallFrame) -> u64 {
     let frame = unsafe { &mut *frame };
 
     match frame.rax {
@@ -332,7 +362,10 @@ pub extern "C" fn syscall_dispatch(frame: *mut SyscallFrame) -> u64 {
         SYS_OPENAT => syscall_openat(frame.rdi, frame.rsi, frame.rdx, frame.r10),
         SYS_NEWFSTATAT => syscall_newfstatat(frame.rdi, frame.rsi, frame.rdx, frame.r10),
         SYS_EXIT | SYS_EXIT_GROUP => syscall_exit(frame.rdi),
-        SYS_YIELD => { core::hint::spin_loop(); ret(0) }
+        SYS_YIELD => {
+            core::hint::spin_loop();
+            ret(0)
+        }
         _ => err(ENOSYS_I),
     }
 }
@@ -366,9 +399,15 @@ fn syscall_write(fd: u64, ptr: u64, len: u64) -> u64 {
         }
         _ => {
             let mut guard = fds();
-            let Some(table) = guard.as_mut() else { return err(EBADF); };
-            let Some(Some(file)) = table.get_mut(fd as usize) else { return err(EBADF); };
-            if file.flags & 3 == 0 { return err(EBADF); }
+            let Some(table) = guard.as_mut() else {
+                return err(EBADF);
+            };
+            let Some(Some(file)) = table.get_mut(fd as usize) else {
+                return err(EBADF);
+            };
+            if file.flags & 3 == 0 {
+                return err(EBADF);
+            }
 
             if file.flags & O_APPEND != 0 {
                 if let Ok(stat) = FS.lock().stat(&file.path) {
@@ -391,15 +430,25 @@ fn syscall_write(fd: u64, ptr: u64, len: u64) -> u64 {
 fn syscall_read(fd: u64, ptr: u64, len: u64) -> u64 {
     if fd == STDIN {
         let guard = fds();
-        if guard.as_ref().unwrap().get(0).and_then(|x| x.as_ref()).is_none() {
+        if guard
+            .as_ref()
+            .unwrap()
+            .get(0)
+            .and_then(|x| x.as_ref())
+            .is_none()
+        {
             return err(EBADF);
         }
         return 0; // stdin is not yet connected to a blocking line discipline
     }
 
     let mut guard = fds();
-    let Some(table) = guard.as_mut() else { return err(EBADF); };
-    let Some(Some(file)) = table.get_mut(fd as usize) else { return err(EBADF); };
+    let Some(table) = guard.as_mut() else {
+        return err(EBADF);
+    };
+    let Some(Some(file)) = table.get_mut(fd as usize) else {
+        return err(EBADF);
+    };
 
     let mut data = vec![0u8; core::cmp::min(len as usize, 1024 * 1024)];
     let n = {
@@ -409,7 +458,9 @@ fn syscall_read(fd: u64, ptr: u64, len: u64) -> u64 {
             Err(_) => return err(EINVAL),
         }
     };
-    if let Err(e) = copy_to_user(ptr, &data[..n]) { return e; }
+    if let Err(e) = copy_to_user(ptr, &data[..n]) {
+        return e;
+    }
     file.offset += n as u64;
     n as u64
 }
@@ -475,7 +526,9 @@ fn syscall_openat(_dirfd: u64, path_ptr: u64, flags: u64, mode: u64) -> u64 {
 
 fn syscall_close(fd: u64) -> u64 {
     let mut guard = fds();
-    let Some(table) = guard.as_mut() else { return err(EBADF); };
+    let Some(table) = guard.as_mut() else {
+        return err(EBADF);
+    };
     if fd as usize >= table.len() || table[fd as usize].is_none() {
         return err(EBADF);
     }
@@ -515,7 +568,9 @@ fn syscall_fstat(fd: u64, stat_ptr: u64) -> u64 {
 
     let guard = fds();
     let table = guard.as_ref().unwrap();
-    let Some(Some(file)) = table.get(fd as usize) else { return err(EBADF); };
+    let Some(Some(file)) = table.get(fd as usize) else {
+        return err(EBADF);
+    };
     let stat = match FS.lock().stat(&file.path) {
         Ok(s) => s,
         Err(_) => return err(ENOENT),
@@ -582,7 +637,9 @@ fn write_stat(ptr: u64, s: &crate::fs::Stat) -> u64 {
 fn syscall_lseek(fd: u64, off: i64, whence: u64) -> u64 {
     let mut guard = fds();
     let table = guard.as_mut().unwrap();
-    let Some(Some(file)) = table.get_mut(fd as usize) else { return err(EBADF); };
+    let Some(Some(file)) = table.get_mut(fd as usize) else {
+        return err(EBADF);
+    };
     let size = match FS.lock().stat(&file.path) {
         Ok(s) => s.size as i64,
         Err(_) => return err(ENOENT),
@@ -607,27 +664,39 @@ fn syscall_access(path_ptr: u64) -> u64 {
         Ok(p) => p,
         Err(e) => return e,
     };
-    if FS.lock().stat(&path).is_ok() { 0 } else { err(ENOENT) }
+    if FS.lock().stat(&path).is_ok() {
+        0
+    } else {
+        err(ENOENT)
+    }
 }
 
 fn syscall_dup(fd: u64) -> u64 {
     let guard = fds();
     let table = guard.as_ref().unwrap();
-    let Some(Some(file)) = table.get(fd as usize) else { return err(EBADF); };
+    let Some(Some(file)) = table.get(fd as usize) else {
+        return err(EBADF);
+    };
     alloc_fd(file.clone())
 }
 
 fn syscall_dup2(fd: u64, newfd: u64) -> u64 {
-    if fd == newfd { return fd; }
+    if fd == newfd {
+        return fd;
+    }
     let guard = fds();
     let table = guard.as_ref().unwrap();
-    let Some(Some(file)) = table.get(fd as usize) else { return err(EBADF); };
+    let Some(Some(file)) = table.get(fd as usize) else {
+        return err(EBADF);
+    };
     let file = file.clone();
     drop(guard);
 
     let mut guard = fds();
     let table = guard.as_mut().unwrap();
-    while table.len() <= newfd as usize { table.push(None); }
+    while table.len() <= newfd as usize {
+        table.push(None);
+    }
     table[newfd as usize] = Some(file);
     newfd
 }
@@ -641,7 +710,9 @@ fn syscall_mprotect(addr: u64, len: u64, prot: u64) -> u64 {
         };
     }
     #[cfg(not(feature = "userspace"))]
-    { err(ENOSYS_I) }
+    {
+        err(ENOSYS_I)
+    }
 }
 
 fn syscall_munmap(addr: u64, len: u64) -> u64 {
@@ -653,7 +724,9 @@ fn syscall_munmap(addr: u64, len: u64) -> u64 {
         };
     }
     #[cfg(not(feature = "userspace"))]
-    { err(ENOSYS_I) }
+    {
+        err(ENOSYS_I)
+    }
 }
 
 fn syscall_mmap(frame: &SyscallFrame) -> u64 {
@@ -662,7 +735,9 @@ fn syscall_mmap(frame: &SyscallFrame) -> u64 {
         return err(ENOSYS_I);
     }
     let len = frame.rsi;
-    if len == 0 { return err(EINVAL); }
+    if len == 0 {
+        return err(EINVAL);
+    }
     let writable = frame.rdx & PROT_WRITE != 0;
     let executable = frame.rdx & PROT_EXEC != 0;
 
@@ -685,26 +760,36 @@ fn syscall_mmap(frame: &SyscallFrame) -> u64 {
         };
     }
     #[cfg(not(feature = "userspace"))]
-    { err(ENOSYS_I) }
+    {
+        err(ENOSYS_I)
+    }
 }
 
 fn syscall_brk(addr: u64) -> u64 {
     #[cfg(feature = "userspace")]
     {
-        if addr == 0 { return user::current_brk(); }
+        if addr == 0 {
+            return user::current_brk();
+        }
         return match user::set_brk(addr) {
             Ok(v) => v,
             Err(_) => user::current_brk(),
         };
     }
     #[cfg(not(feature = "userspace"))]
-    { 0 }
+    {
+        0
+    }
 }
 
 fn syscall_getcwd(ptr: u64, size: u64) -> u64 {
-    if size < 2 { return err(EINVAL); }
+    if size < 2 {
+        return err(EINVAL);
+    }
     let path = b"/\0";
-    if (size as usize) < path.len() { return err(EINVAL); }
+    if (size as usize) < path.len() {
+        return err(EINVAL);
+    }
     match copy_to_user(ptr, path) {
         Ok(()) => 2,
         Err(e) => e,
@@ -716,7 +801,12 @@ fn syscall_chdir(path_ptr: u64) -> u64 {
         Ok(p) => p,
         Err(e) => return e,
     };
-    if FS.lock().stat(&path).map(|s| s.file_type == FileType::Directory).unwrap_or(false) {
+    if FS
+        .lock()
+        .stat(&path)
+        .map(|s| s.file_type == FileType::Directory)
+        .unwrap_or(false)
+    {
         0
     } else {
         err(ENOENT)
@@ -770,7 +860,9 @@ fn syscall_uname(ptr: u64) -> u64 {
 fn syscall_getdents64(fd: u64, ptr: u64, len: u64) -> u64 {
     let mut guard = fds();
     let table = guard.as_mut().unwrap();
-    let Some(Some(file)) = table.get_mut(fd as usize) else { return err(EBADF); };
+    let Some(Some(file)) = table.get_mut(fd as usize) else {
+        return err(EBADF);
+    };
 
     let entries = match FS.lock().readdir(&file.path) {
         Ok(v) => v,
@@ -789,16 +881,16 @@ fn syscall_getdents64(fd: u64, ptr: u64, len: u64) -> u64 {
         }
         out.resize(out.len() + reclen, 0);
         let p = out.len() - reclen;
-        out[p..p+8].copy_from_slice(&(e.ino as u64).to_le_bytes());
-        out[p+8..p+16].copy_from_slice(&((idx + 1) as i64).to_le_bytes());
-        out[p+16..p+18].copy_from_slice(&(reclen as u16).to_le_bytes());
-        out[p+18] = match e.file_type {
+        out[p..p + 8].copy_from_slice(&(e.ino as u64).to_le_bytes());
+        out[p + 8..p + 16].copy_from_slice(&((idx + 1) as i64).to_le_bytes());
+        out[p + 16..p + 18].copy_from_slice(&(reclen as u16).to_le_bytes());
+        out[p + 18] = match e.file_type {
             FileType::Directory => 4,
             FileType::Regular => 8,
             FileType::Symlink => 10,
             _ => 0,
         };
-        out[p+19..p+19+name.len()].copy_from_slice(name);
+        out[p + 19..p + 19 + name.len()].copy_from_slice(name);
         emitted += 1;
     }
 
@@ -806,7 +898,9 @@ fn syscall_getdents64(fd: u64, ptr: u64, len: u64) -> u64 {
     if count == 0 {
         return 0;
     }
-    if let Err(e) = copy_to_user(ptr, &out) { return e; }
+    if let Err(e) = copy_to_user(ptr, &out) {
+        return e;
+    }
     file.offset = start as u64 + emitted as u64;
     count as u64
 }
@@ -824,7 +918,11 @@ fn syscall_futex(frame: &SyscallFrame) -> u64 {
     // Single-threaded kernel/process: a matching WAIT cannot make progress,
     // so report EAGAIN and let a userspace mutex retry.
     let op = frame.rsi & 0x7f;
-    if op == 0 || op == 128 { err(EAGAIN) } else { ret(0) }
+    if op == 0 || op == 128 {
+        err(EAGAIN)
+    } else {
+        ret(0)
+    }
 }
 
 fn syscall_arch_prctl(code: u64, addr: u64) -> u64 {
@@ -835,10 +933,28 @@ fn syscall_arch_prctl(code: u64, addr: u64) -> u64 {
     const ARCH_GET_GS: u64 = 0x1004;
 
     match code {
-        ARCH_SET_FS => unsafe { wrmsr(0xC000_0100, addr); ret(0) },
-        ARCH_SET_GS => unsafe { wrmsr(0xC000_0101, addr); ret(0) },
-        ARCH_GET_FS => unsafe { if copy_to_user(addr, &rdmsr(0xC000_0100).to_le_bytes()).is_ok() { 0 } else { err(EFAULT) } },
-        ARCH_GET_GS => unsafe { if copy_to_user(addr, &rdmsr(0xC000_0101).to_le_bytes()).is_ok() { 0 } else { err(EFAULT) } },
+        ARCH_SET_FS => unsafe {
+            wrmsr(0xC000_0100, addr);
+            ret(0)
+        },
+        ARCH_SET_GS => unsafe {
+            wrmsr(0xC000_0101, addr);
+            ret(0)
+        },
+        ARCH_GET_FS => unsafe {
+            if copy_to_user(addr, &rdmsr(0xC000_0100).to_le_bytes()).is_ok() {
+                0
+            } else {
+                err(EFAULT)
+            }
+        },
+        ARCH_GET_GS => unsafe {
+            if copy_to_user(addr, &rdmsr(0xC000_0101).to_le_bytes()).is_ok() {
+                0
+            } else {
+                err(EFAULT)
+            }
+        },
         _ => err(EINVAL),
     }
 }

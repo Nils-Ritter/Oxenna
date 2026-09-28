@@ -5,26 +5,26 @@
 
 extern crate alloc;
 
-mod fb;
+mod acpi;
+mod console;
+pub mod drivers;
 #[cfg(feature = "userspace")]
 mod elf;
-pub mod syscall;
+mod fb;
+mod font;
 #[cfg(feature = "fs_ext2")]
 mod fs;
-mod acpi;
-mod font;
-mod serial;
-mod test;
-mod kmem;
-pub mod int;
 pub mod gdt;
-#[cfg(feature = "userspace")]
-mod user;
+pub mod int;
+mod kmem;
 mod pic;
-mod console;
+mod serial;
 #[cfg(feature = "shell")]
 mod shell;
-pub mod drivers;
+pub mod syscall;
+mod test;
+#[cfg(feature = "userspace")]
+mod user;
 
 #[cfg(feature = "test")]
 #[path = "../tests/trivial_assert.rs"]
@@ -42,8 +42,8 @@ mod userspace_test;
 #[path = "../tests/interrupts.rs"]
 mod interrupts_test;
 
-use crate::{fb::Color, kmem::heap::init_heap};
 pub use crate::test::{TestResult, test};
+use crate::{fb::Color, kmem::heap::init_heap};
 
 extern crate oxenna_test_macro;
 
@@ -78,23 +78,29 @@ pub extern "C" fn kmain() -> ! {
 
     #[cfg(feature = "test")]
     {
-        unsafe { TESTING = true; }
+        unsafe {
+            TESTING = true;
+        }
         serial_println!("[TEST] entering test::run()");
         test::run();
     }
 
     #[cfg(not(feature = "test"))]
     {
-        unsafe { TESTING = false; }
+        unsafe {
+            TESTING = false;
+        }
         kernel();
     }
 }
 
 static mut KINIT_CALLED: bool = false;
 
-fn kinit(){
+fn kinit() {
     unsafe {
-        if KINIT_CALLED { panic!("KINIT CANNOT BE CALLED MORE THAN ONCE"); }
+        if KINIT_CALLED {
+            panic!("KINIT CANNOT BE CALLED MORE THAN ONCE");
+        }
         KINIT_CALLED = true;
     }
 
@@ -137,7 +143,8 @@ fn kinit(){
         init_heap(
             kmem::MAPPER.lock().as_mut().unwrap(),
             kmem::FRAME_ALLOCATOR.lock().as_mut().unwrap(),
-        ).expect("failed to init heap");
+        )
+        .expect("failed to init heap");
     }
     console_println_color!(Color::GREEN, "[OK]");
 
@@ -149,15 +156,33 @@ fn kinit(){
 }
 
 #[allow(unused)]
-fn kernel() -> !{
+fn kernel() -> ! {
     console::clear();
     console_println!("Welcome to...");
-    console_println_color!(Color::BLUE, "________                                      ");
-    console_println_color!(Color::BLUE, "\\_____  \\ ___  ___ ____   ____   ____ _____   ");
-    console_println_color!(Color::BLUE, " /   |   \\\\  \\/  // __ \\ /    \\ /    \\\\__  \\  ");
-    console_println_color!(Color::BLUE, "/    |    \\>    <\\  ___/|   |  \\   |  \\/ __ \\_");
-    console_println_color!(Color::BLUE, "\\_______  /__/\\_ \\\\___  >___|  /___|  (____  /");
-    console_println_color!(Color::BLUE, "        \\/      \\/    \\/     \\/     \\/     \\/");
+    console_println_color!(
+        Color::BLUE,
+        "________                                      "
+    );
+    console_println_color!(
+        Color::BLUE,
+        "\\_____  \\ ___  ___ ____   ____   ____ _____   "
+    );
+    console_println_color!(
+        Color::BLUE,
+        " /   |   \\\\  \\/  // __ \\ /    \\ /    \\\\__  \\  "
+    );
+    console_println_color!(
+        Color::BLUE,
+        "/    |    \\>    <\\  ___/|   |  \\   |  \\/ __ \\_"
+    );
+    console_println_color!(
+        Color::BLUE,
+        "\\_______  /__/\\_ \\\\___  >___|  /___|  (____  /"
+    );
+    console_println_color!(
+        Color::BLUE,
+        "        \\/      \\/    \\/     \\/     \\/     \\/"
+    );
     #[cfg(feature = "shell")]
     console_print!("\nType any command to get started: ");
     #[cfg(not(feature = "shell"))]
@@ -201,13 +226,7 @@ fn panic(info: &PanicInfo) -> ! {
 
     let location = info
         .location()
-        .map(|loc| {
-            (
-                loc.file(),
-                loc.line(),
-                loc.column(),
-            )
-        });
+        .map(|loc| (loc.file(), loc.line(), loc.column()));
 
     // ------------------------------------------------------------
     // Control registers
@@ -215,18 +234,13 @@ fn panic(info: &PanicInfo) -> ! {
 
     let (cr3_frame, _) = Cr3::read();
 
-    let cr3 =
-        cr3_frame.start_address().as_u64();
+    let cr3 = cr3_frame.start_address().as_u64();
 
-    let cr2 = Cr2::read()
-        .map(|addr| addr.as_u64())
-        .unwrap_or(0);
+    let cr2 = Cr2::read().map(|addr| addr.as_u64()).unwrap_or(0);
 
-    let cr0 =
-        Cr0::read().bits();
+    let cr0 = Cr0::read().bits();
 
-    let cr4 =
-        Cr4::read().bits();
+    let cr4 = Cr4::read().bits();
 
     // ------------------------------------------------------------
     // Extended Feature Enable Register
@@ -235,8 +249,7 @@ fn panic(info: &PanicInfo) -> ! {
     // EFER.SCE should be set when syscalls are enabled.
     // ------------------------------------------------------------
 
-    let efer =
-        Efer::read().bits();
+    let efer = Efer::read().bits();
 
     // ------------------------------------------------------------
     // Segment registers
@@ -249,14 +262,11 @@ fn panic(info: &PanicInfo) -> ! {
     //     CS & 3 == 3 -> ring 3
     // ------------------------------------------------------------
 
-    let cs =
-        CS::get_reg().0;
+    let cs = CS::get_reg().0;
 
-    let ss =
-        SS::get_reg().0;
+    let ss = SS::get_reg().0;
 
-    let privilege_level =
-        cs & 0x3;
+    let privilege_level = cs & 0x3;
 
     // ------------------------------------------------------------
     // Current stack pointer
@@ -287,28 +297,21 @@ fn panic(info: &PanicInfo) -> ! {
         );
     }
 
-
     // ------------------------------------------------------------
     // Decode some useful flags
     // ------------------------------------------------------------
 
-    let interrupts_enabled =
-        (rflags & (1 << 9)) != 0;
+    let interrupts_enabled = (rflags & (1 << 9)) != 0;
 
-    let direction_flag =
-        (rflags & (1 << 10)) != 0;
+    let direction_flag = (rflags & (1 << 10)) != 0;
 
-    let carry_flag =
-        (rflags & (1 << 0)) != 0;
+    let carry_flag = (rflags & (1 << 0)) != 0;
 
-    let zero_flag =
-        (rflags & (1 << 6)) != 0;
+    let zero_flag = (rflags & (1 << 6)) != 0;
 
-    let sign_flag =
-        (rflags & (1 << 7)) != 0;
+    let sign_flag = (rflags & (1 << 7)) != 0;
 
-    let overflow_flag =
-        (rflags & (1 << 11)) != 0;
+    let overflow_flag = (rflags & (1 << 11)) != 0;
 
     // ------------------------------------------------------------
     // ---- SERIAL OUTPUT -----------------------------------------
@@ -318,15 +321,9 @@ fn panic(info: &PanicInfo) -> ! {
     // ------------------------------------------------------------
 
     serial_println!();
-    serial_println!(
-        "================================================================"
-    );
-    serial_println!(
-        "                         KERNEL PANIC"
-    );
-    serial_println!(
-        "================================================================"
-    );
+    serial_println!("================================================================");
+    serial_println!("                         KERNEL PANIC");
+    serial_println!("================================================================");
 
     // ------------------------------------------------------------
     // Panic information
@@ -334,59 +331,32 @@ fn panic(info: &PanicInfo) -> ! {
 
     match location {
         Some((file, line, col)) => {
-            serial_println!(
-                "  Location : {}:{}:{}",
-                file,
-                line,
-                col
-            );
+            serial_println!("  Location : {}:{}:{}", file, line, col);
         }
 
         None => {
-            serial_println!(
-                "  Location : unknown"
-            );
+            serial_println!("  Location : unknown");
         }
     }
 
-    serial_println!(
-        "  Message  : {}",
-        info.message()
-    );
+    serial_println!("  Message  : {}", info.message());
 
     // ------------------------------------------------------------
     // Execution context
     // ------------------------------------------------------------
 
     serial_println!();
-    serial_println!(
-        "-------------------- EXECUTION CONTEXT ------------------------"
-    );
+    serial_println!("-------------------- EXECUTION CONTEXT ------------------------");
 
-    serial_println!(
-        "  CPL      : ring {}",
-        privilege_level
-    );
+    serial_println!("  CPL      : ring {}", privilege_level);
 
-    serial_println!(
-        "  CS       : {:#06x}",
-        cs
-    );
+    serial_println!("  CS       : {:#06x}", cs);
 
-    serial_println!(
-        "  SS       : {:#06x}",
-        ss
-    );
+    serial_println!("  SS       : {:#06x}", ss);
 
-    serial_println!(
-        "  RSP      : {:#018x}",
-        rsp
-    );
+    serial_println!("  RSP      : {:#018x}", rsp);
 
-    serial_println!(
-        "  RFLAGS   : {:#018x}",
-        rflags
-    );
+    serial_println!("  RFLAGS   : {:#018x}", rflags);
 
     serial_println!(
         "  IF       : {}",
@@ -397,109 +367,50 @@ fn panic(info: &PanicInfo) -> ! {
         }
     );
 
-    serial_println!(
-        "  CF       : {}",
-        carry_flag
-    );
+    serial_println!("  CF       : {}", carry_flag);
 
-    serial_println!(
-        "  ZF       : {}",
-        zero_flag
-    );
+    serial_println!("  ZF       : {}", zero_flag);
 
-    serial_println!(
-        "  SF       : {}",
-        sign_flag
-    );
+    serial_println!("  SF       : {}", sign_flag);
 
-    serial_println!(
-        "  OF       : {}",
-        overflow_flag
-    );
+    serial_println!("  OF       : {}", overflow_flag);
 
-    serial_println!(
-        "  DF       : {}",
-        direction_flag
-    );
+    serial_println!("  DF       : {}", direction_flag);
 
     // ------------------------------------------------------------
     // Memory-management state
     // ------------------------------------------------------------
 
     serial_println!();
-    serial_println!(
-        "-------------------- MEMORY STATE -----------------------------"
-    );
+    serial_println!("-------------------- MEMORY STATE -----------------------------");
 
-    serial_println!(
-        "  CR0      : {:#018x}",
-        cr0
-    );
+    serial_println!("  CR0      : {:#018x}", cr0);
 
-    serial_println!(
-        "  CR2      : {:#018x}",
-        cr2
-    );
+    serial_println!("  CR2      : {:#018x}", cr2);
 
-    serial_println!(
-        "  CR3      : {:#018x}",
-        cr3
-    );
+    serial_println!("  CR3      : {:#018x}", cr3);
 
-    serial_println!(
-        "  CR4      : {:#018x}",
-        cr4
-    );
+    serial_println!("  CR4      : {:#018x}", cr4);
 
-    serial_println!(
-        "  EFER     : {:#018x}",
-        efer
-    );
+    serial_println!("  EFER     : {:#018x}", efer);
 
-    serial_println!(
-        "  CR0.PG   : {}",
-        (cr0 & (1 << 31)) != 0
-    );
+    serial_println!("  CR0.PG   : {}", (cr0 & (1 << 31)) != 0);
 
-    serial_println!(
-        "  CR0.WP   : {}",
-        (cr0 & (1 << 16)) != 0
-    );
+    serial_println!("  CR0.WP   : {}", (cr0 & (1 << 16)) != 0);
 
-    serial_println!(
-        "  CR4.PAE  : {}",
-        (cr4 & (1 << 5)) != 0
-    );
+    serial_println!("  CR4.PAE  : {}", (cr4 & (1 << 5)) != 0);
 
-    serial_println!(
-        "  CR4.PGE  : {}",
-        (cr4 & (1 << 7)) != 0
-    );
+    serial_println!("  CR4.PGE  : {}", (cr4 & (1 << 7)) != 0);
 
-    serial_println!(
-        "  CR4.SMEP : {}",
-        (cr4 & (1 << 20)) != 0
-    );
+    serial_println!("  CR4.SMEP : {}", (cr4 & (1 << 20)) != 0);
 
-    serial_println!(
-        "  CR4.SMAP : {}",
-        (cr4 & (1 << 21)) != 0
-    );
+    serial_println!("  CR4.SMAP : {}", (cr4 & (1 << 21)) != 0);
 
-    serial_println!(
-        "  EFER.SCE : {}",
-        (efer & (1 << 0)) != 0
-    );
+    serial_println!("  EFER.SCE : {}", (efer & (1 << 0)) != 0);
 
-    serial_println!(
-        "  EFER.NXE : {}",
-        (efer & (1 << 11)) != 0
-    );
+    serial_println!("  EFER.NXE : {}", (efer & (1 << 11)) != 0);
 
-    serial_println!(
-        "  EFER.LME : {}",
-        (efer & (1 << 8)) != 0
-    );
+    serial_println!("  EFER.LME : {}", (efer & (1 << 8)) != 0);
 
     // ------------------------------------------------------------
     // CR2 deserves a specific warning.
@@ -510,18 +421,11 @@ fn panic(info: &PanicInfo) -> ! {
     // ------------------------------------------------------------
 
     serial_println!();
-    serial_println!(
-        "-------------------- PAGE FAULT STATE ------------------------"
-    );
+    serial_println!("-------------------- PAGE FAULT STATE ------------------------");
 
-    serial_println!(
-        "  CR2      : {:#018x}",
-        cr2
-    );
+    serial_println!("  CR2      : {:#018x}", cr2);
 
-    serial_println!(
-        "  NOTE     : CR2 is only meaningful for a page-fault context"
-    );
+    serial_println!("  NOTE     : CR2 is only meaningful for a page-fault context");
 
     serial_println!();
 
@@ -529,36 +433,19 @@ fn panic(info: &PanicInfo) -> ! {
     // Stack information
     // ------------------------------------------------------------
 
-    serial_println!(
-        "-------------------- STACK STATE ------------------------------"
-    );
+    serial_println!("-------------------- STACK STATE ------------------------------");
 
-    serial_println!(
-        "  RSP      : {:#018x}",
-        rsp
-    );
+    serial_println!("  RSP      : {:#018x}", rsp);
 
-    serial_println!(
-        "  RSP % 16 : {}",
-        rsp & 0xf
-    );
+    serial_println!("  RSP % 16 : {}", rsp & 0xf);
 
-    serial_println!(
-        "  RSP % 8  : {}",
-        rsp & 0x7
-    );
+    serial_println!("  RSP % 8  : {}", rsp & 0x7);
 
-    serial_println!(
-        "================================================================"
-    );
+    serial_println!("================================================================");
 
-    serial_println!(
-        "                         SYSTEM HALTED"
-    );
+    serial_println!("                         SYSTEM HALTED");
 
-    serial_println!(
-        "================================================================"
-    );
+    serial_println!("================================================================");
 
     serial_println!();
 
@@ -566,10 +453,7 @@ fn panic(info: &PanicInfo) -> ! {
     // ---- FRAMEBUFFER OUTPUT ------------------------------------
     // ------------------------------------------------------------
 
-    console_println_color!(
-        Color::RED,
-        ""
-    );
+    console_println_color!(Color::RED, "");
 
     console_println_color!(
         Color::RED,
@@ -586,10 +470,7 @@ fn panic(info: &PanicInfo) -> ! {
         "############################################################"
     );
 
-    console_println_color!(
-        Color::RED,
-        ""
-    );
+    console_println_color!(Color::RED, "");
 
     // ------------------------------------------------------------
     // Panic information
@@ -597,77 +478,35 @@ fn panic(info: &PanicInfo) -> ! {
 
     match location {
         Some((file, line, col)) => {
-            console_println_color!(
-                Color::RED,
-                "  Location : {}:{}:{}",
-                file,
-                line,
-                col
-            );
+            console_println_color!(Color::RED, "  Location : {}:{}:{}", file, line, col);
         }
 
         None => {
-            console_println_color!(
-                Color::RED,
-                "  Location : unknown"
-            );
+            console_println_color!(Color::RED, "  Location : unknown");
         }
     }
 
-    console_println_color!(
-        Color::RED,
-        ""
-    );
+    console_println_color!(Color::RED, "");
 
-    console_println_color!(
-        Color::RED,
-        "  {}",
-        info.message()
-    );
+    console_println_color!(Color::RED, "  {}", info.message());
 
     // ------------------------------------------------------------
     // Execution context
     // ------------------------------------------------------------
 
-    console_println_color!(
-        Color::RED,
-        ""
-    );
+    console_println_color!(Color::RED, "");
 
-    console_println_color!(
-        Color::RED,
-        "  CPU CONTEXT"
-    );
+    console_println_color!(Color::RED, "  CPU CONTEXT");
 
-    console_println_color!(
-        Color::RED,
-        "    CPL      : ring {}",
-        privilege_level
-    );
+    console_println_color!(Color::RED, "    CPL      : ring {}", privilege_level);
 
-    console_println_color!(
-        Color::RED,
-        "    CS       : {:#06x}",
-        cs
-    );
+    console_println_color!(Color::RED, "    CS       : {:#06x}", cs);
 
-    console_println_color!(
-        Color::RED,
-        "    SS       : {:#06x}",
-        ss
-    );
+    console_println_color!(Color::RED, "    SS       : {:#06x}", ss);
 
-    console_println_color!(
-        Color::RED,
-        "    RSP      : {:#018x}",
-        rsp
-    );
+    console_println_color!(Color::RED, "    RSP      : {:#018x}", rsp);
 
-    console_println_color!(
-        Color::RED,
-        "    RFLAGS   : {:#018x}",
-        rflags
-    );
+    console_println_color!(Color::RED, "    RFLAGS   : {:#018x}", rflags);
 
     console_println_color!(
         Color::RED,
@@ -683,55 +522,23 @@ fn panic(info: &PanicInfo) -> ! {
     // Memory state
     // ------------------------------------------------------------
 
-    console_println_color!(
-        Color::RED,
-        ""
-    );
+    console_println_color!(Color::RED, "");
 
-    console_println_color!(
-        Color::RED,
-        "  MEMORY STATE"
-    );
+    console_println_color!(Color::RED, "  MEMORY STATE");
 
-    console_println_color!(
-        Color::RED,
-        "    CR0      : {:#018x}",
-        cr0
-    );
+    console_println_color!(Color::RED, "    CR0      : {:#018x}", cr0);
 
-    console_println_color!(
-        Color::RED,
-        "    CR2      : {:#018x}",
-        cr2
-    );
+    console_println_color!(Color::RED, "    CR2      : {:#018x}", cr2);
 
-    console_println_color!(
-        Color::RED,
-        "    CR3      : {:#018x}",
-        cr3
-    );
+    console_println_color!(Color::RED, "    CR3      : {:#018x}", cr3);
 
-    console_println_color!(
-        Color::RED,
-        "    CR4      : {:#018x}",
-        cr4
-    );
+    console_println_color!(Color::RED, "    CR4      : {:#018x}", cr4);
 
-    console_println_color!(
-        Color::RED,
-        "    EFER     : {:#018x}",
-        efer
-    );
+    console_println_color!(Color::RED, "    EFER     : {:#018x}", efer);
 
-    console_println_color!(
-        Color::RED,
-        ""
-    );
+    console_println_color!(Color::RED, "");
 
-    console_println_color!(
-        Color::RED,
-        "  FEATURES"
-    );
+    console_println_color!(Color::RED, "  FEATURES");
 
     console_println_color!(
         Color::RED,
@@ -793,25 +600,13 @@ fn panic(info: &PanicInfo) -> ! {
         }
     );
 
-    console_println_color!(
-        Color::RED,
-        ""
-    );
+    console_println_color!(Color::RED, "");
 
-    console_println_color!(
-        Color::RED,
-        "  CR2 is only meaningful after a page fault."
-    );
+    console_println_color!(Color::RED, "  CR2 is only meaningful after a page fault.");
 
-    console_println_color!(
-        Color::RED,
-        "  System halted."
-    );
+    console_println_color!(Color::RED, "  System halted.");
 
-    console_println_color!(
-        Color::RED,
-        ""
-    );
+    console_println_color!(Color::RED, "");
 
     console_println_color!(
         Color::RED,

@@ -156,7 +156,12 @@ impl FileSystem {
     }
 
     /// Read from an open-file style offset without materializing the whole file.
-    pub fn read_at(&mut self, path: &str, offset: u64, buffer: &mut [u8]) -> Result<usize, FsError> {
+    pub fn read_at(
+        &mut self,
+        path: &str,
+        offset: u64,
+        buffer: &mut [u8],
+    ) -> Result<usize, FsError> {
         let fs = self.fs()?;
         let ino = fs.resolve(ROOT_INO, path, true)?;
         fs.read(ino, offset, buffer)
